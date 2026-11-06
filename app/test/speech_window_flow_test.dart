@@ -1,3 +1,4 @@
+import 'support/capture_output.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -63,8 +64,8 @@ Future<void> capture(WidgetTester t, GlobalKey frame, String name) async {
                 as RenderRepaintBoundary)
             .toImage();
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    await File(
-      'D:/FH6_Music/outputs/gpt-sovits/revision-20261104-window-flow/$name.png',
+    await captureOutputFile(
+      'gpt-sovits/revision-20261104-window-flow/$name.png',
     ).writeAsBytes(bytes!.buffer.asUint8List());
     img.dispose();
   });

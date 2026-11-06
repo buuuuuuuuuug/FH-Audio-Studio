@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'support/capture_output.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -41,8 +41,8 @@ Future<void> screenshot(WidgetTester t, GlobalKey frame, String name) async {
                 as RenderRepaintBoundary)
             .toImage();
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-    await File(
-      'D:/FH6_Music/outputs/gpt-sovits/revision-20261104-install-navigation/$name.png',
+    await captureOutputFile(
+      'gpt-sovits/revision-20261104-install-navigation/$name.png',
     ).writeAsBytes(bytes!.buffer.asUint8List());
     image.dispose();
   });

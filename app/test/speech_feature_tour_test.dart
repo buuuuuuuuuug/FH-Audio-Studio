@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'support/capture_output.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -29,7 +29,7 @@ Future<void> capture(GlobalKey frame, String name) async {
       await (frame.currentContext!.findRenderObject() as RenderRepaintBoundary)
           .toImage();
   final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-  final file = File('D:/FH6_Music/outputs/gpt-sovits/tours-20261106/$name.png');
+  final file = captureOutputFile('gpt-sovits/tours-20261106/$name.png');
   await file.parent.create(recursive: true);
   await file.writeAsBytes(bytes!.buffer.asUint8List());
   image.dispose();

@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'support/capture_output.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -85,8 +85,8 @@ void main() {
                     as RenderRepaintBoundary)
                 .toImage();
         final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-        await File(
-          'D:/FH6_Music/outputs/gpt-sovits/revision-20261105-game-update/generation-$width.png',
+        await captureOutputFile(
+          'gpt-sovits/revision-20261105-game-update/generation-$width.png',
         ).writeAsBytes(bytes!.buffer.asUint8List());
         image.dispose();
       });
