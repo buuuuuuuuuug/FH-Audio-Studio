@@ -1,3 +1,5 @@
+import 'package:fh_radio_studio/core/speech_generation.dart';
+import 'speech_generation_test.dart' show FakeSpeech;
 import 'package:fh_radio_studio/theme/app_theme.dart';
 import 'package:fh_radio_studio/theme/accents.dart';
 import 'dart:convert';
@@ -257,7 +259,18 @@ void main() {
     'settings close on a main content click without swallowing its action',
     (t) async {
       viewport(t, const Size(1365, 1000));
-      final c = await playlist.fixture();
+      final parent = await playlist.fixture();
+      final c = ProviderContainer(
+        parent: parent,
+        overrides: [
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
+        ],
+      );
+      addTearDown(c.dispose);
       var clicks = 0;
       final router = GoRouter(
         initialLocation: '/dashboard',

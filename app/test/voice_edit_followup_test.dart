@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:media_kit/media_kit.dart';
@@ -60,14 +61,22 @@ void main() {
       );
       expect(settings.top, main.top);
       expect(settings.bottom, main.bottom);
-      final input = find.byKey(const ValueKey('material-silence-ms'));
+      final input = find.descendant(
+        of: find.byKey(const ValueKey('material-silence-ms')),
+        matching: find.byType(TextField),
+      );
       String value() => t.widget<TextField>(input).controller!.text;
-      await t.tap(find.byKey(const ValueKey('material-silence-step-50')));
+      await t.tap(input);
+      await t.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await t.pump();
       expect(value(), '150');
-      await t.tap(find.byKey(const ValueKey('material-silence-step--50')));
+      await t.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await t.pump();
       expect(value(), '100');
       await t.enterText(input, '375');
-      await t.tap(find.byKey(const ValueKey('material-silence-step-50')));
+      await t.tap(input);
+      await t.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await t.pump();
       expect(value(), '425');
       expect(t.takeException(), isNull);
     },
@@ -153,26 +162,15 @@ void main() {
       final export = t.getRect(
         find.byKey(const ValueKey('voice-export-selected-text')),
       );
-      final add = t.getRect(find.byKey(const ValueKey('voice-extract-assets')));
-      final open = t.getRect(
-        find.byKey(const ValueKey('voice-open-audio-folder')),
-      );
-      final forget = t.getRect(
-        find.byKey(const ValueKey('voice-forget-audio')),
-      );
       expect(export.top, multi.top);
-      expect(add.top, multi.top);
       expect(export.left, greaterThan(multi.right));
-      expect(open.left, greaterThan(add.right));
-      expect(forget.left, greaterThan(open.right));
-      await t.tap(find.byKey(const ValueKey('voice-toggle-all-entries')));
+      expect(find.byKey(const ValueKey('voice-extract-assets')), findsNothing);
+      await t.tap(find.byType(Checkbox).first);
       await t.pumpAndSettle();
       expect(find.text('已选 50'), findsOneWidget);
-      expect(find.text('取消全选'), findsOneWidget);
-      await t.tap(find.byKey(const ValueKey('voice-toggle-all-entries')));
+      await t.tap(find.byType(Checkbox).first);
       await t.pumpAndSettle();
       expect(find.text('已选 0'), findsOneWidget);
-      expect(find.text('全选'), findsOneWidget);
       expect(t.takeException(), isNull);
     },
   );

@@ -176,6 +176,9 @@ def test_repeated_scans_reuse_current_text_without_reenrichment_or_plan_writes(
     project = tmp_path / "Project"
     (project / ".fh-radio-studio").mkdir(parents=True)
     parsed = prepare(project, game, source)
+    # Initial synchronization records the live file signature. Repeated scans
+    # thereafter must neither rewrite the plan nor reenrich the cached text.
+    scan(project, game)
     before = plan_path(project).read_bytes()
     catalog = project / f"analysis/voices/catalog/{parsed['bank']['sha256']}.json"
     catalog_before = catalog.read_bytes()

@@ -3,8 +3,6 @@
 import re
 from pathlib import Path
 
-from .language import normalize_preferred_language, resolve_user_preferred_lang_path
-
 _LANGUAGES = {
     "CHS": "简体中文",
     "CN": "简体中文",
@@ -85,26 +83,9 @@ def deployment_preview(
             "operation": "write",
         }
         for item in validated_files
+        if not item.get("unchanged")
     ]
     resource_count = len(writes)
-    language = manifest.get("language") or {}
-    if language.get("preferred_lang"):
-        value = normalize_preferred_language(str(language["preferred_lang"]))
-        destination = resolve_user_preferred_lang_path(getattr(args, "preferred_path", None))
-        writes.append(
-            {
-                "file_name": destination.name,
-                "selection_id": PREFERRED_LANGUAGE,
-                "selected": PREFERRED_LANGUAGE not in excluded,
-                "path_base": "语音设置目录",
-                "destination": str(destination),
-                "relative_path": "UserPreferredLang",
-                "description": f"设置游戏使用的语音语言：{_language(value)}。",
-                "category": "setting",
-                "size_bytes": len(value.encode("utf-8")),
-                "operation": "write",
-            }
-        )
     fingerprint = getattr(args, "last_applied_manifest", None)
     if fingerprint:
         destination = Path(fingerprint).expanduser().resolve()
@@ -144,6 +125,7 @@ def deployment_preview(
             }
             for path in removals
         ],
-        "changed_files_only": delta.get("mode") == "changed_files",
-        "omitted_unchanged_count": len(delta.get("omitted_unchanged_files", [])),
+        "changed_files_only": True,
+        "omitted_unchanged_count": len(delta.get("omitted_unchanged_files", []))
+        + sum(bool(item.get("unchanged")) for item in validated_files),
     }

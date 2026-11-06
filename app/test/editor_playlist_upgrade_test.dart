@@ -1,3 +1,5 @@
+import 'package:fh_radio_studio/core/speech_generation.dart';
+import 'speech_generation_test.dart' show FakeSpeech;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -254,6 +256,11 @@ void main() {
       );
       final c = ProviderContainer(
         overrides: [
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(
             await SharedPreferences.getInstance(),
           ),
@@ -584,6 +591,11 @@ void main() {
       final f = await fixture();
       final c = ProviderContainer(
         overrides: [
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(
             await SharedPreferences.getInstance(),
           ),
@@ -774,6 +786,11 @@ Future<({Directory dir, ProviderContainer container})> fixture() async {
   });
   final c = ProviderContainer(
     overrides: [
+      speechGenerationProvider.overrideWith((ref, key) {
+        final session = FakeSpeech();
+        ref.onDispose(session.dispose);
+        return session;
+      }),
       sharedPreferencesProvider.overrideWithValue(
         await SharedPreferences.getInstance(),
       ),

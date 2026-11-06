@@ -1,7 +1,7 @@
 name: fh_radio_studio
 description: "FH Audio Studio - music, radio and voice editing for FH6"
 publish_to: 'none'
-version: 1.0.0-preview.1+90
+version: 1.0.0-preview.2+91
 
 environment:
   sdk: ^3.10.7

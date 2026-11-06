@@ -9,7 +9,12 @@ from .baseline import (
 from .baseline_order import is_baseline_derived_index_path
 from .common import *
 from .deployment_paths import contained_game_path, deployment_relative_path
-from .game import resolve_game_dir
+from .game import game_root_for, resolve_game_dir
+from .language_policy import is_language_support_file
+
+
+def _excluded_integrity_path(path):
+    return is_baseline_derived_index_path(path) or is_language_support_file(path)
 
 
 def _norm_path(value: object) -> str:
@@ -51,7 +56,7 @@ def _manifest_md5s_by_path(manifest_path: Optional[Path]) -> Dict[str, str]:
             continue
         install_rel = _baseline_install_relative_path(item)
         rel = _norm_path(item.get("relative_path"))
-        if is_baseline_derived_index_path(install_rel) or is_baseline_derived_index_path(rel):
+        if _excluded_integrity_path(install_rel) or _excluded_integrity_path(rel):
             continue
         if install_rel:
             result[install_rel] = md5
@@ -251,8 +256,8 @@ def _integrity_from_plan(
         item
         for item in list(plan.get("files", []))
         if isinstance(item, dict)
-        and not is_baseline_derived_index_path(item.get("relative_path"))
-        and not is_baseline_derived_index_path(item.get("install_relative_path"))
+        and not _excluded_integrity_path(item.get("relative_path"))
+        and not _excluded_integrity_path(item.get("install_relative_path"))
     ]
     pending_md5s = _manifest_md5s_by_path(pending_baseline_manifest)
     baseline_manifest_data = _load_manifest_if_exists(baseline_manifest)
@@ -536,19 +541,48 @@ def verify_integrity(
         preferred_path=preferred_path,
     )
     _apply_package_coverage(plan, package_md5s, last_applied_md5s, game_dir=game_dir)
+    integrity = _integrity_from_plan(
+        plan,
+        baseline_manifest=baseline_manifest,
+        pending_baseline_manifest=pending_baseline_manifest,
+        package_manifest=package_manifest,
+        last_applied_package_manifest=last_applied_package_manifest,
+        package_file_count=_package_file_count(package_manifest),
+    )
+    # An old mediapc override can still match our package while hiding a newly
+    # patched media file. Check the underlying original independently as well.
+    original_hashes = _manifest_md5s_by_path(baseline_manifest)
+    base_updates = []
+    for item in plan.get("files", []):
+        relative = _baseline_install_relative_path(item)
+        current = item.get("md5")
+        before = original_hashes.get(relative)
+        if (
+            before
+            and current
+            and current != before
+            and item.get("effective_md5", current) != current
+            and current != last_applied_md5s.get(relative)
+        ):
+            base_updates.append(
+                _issue(
+                    relative,
+                    str(item.get("source_game_path", "")),
+                    "底层游戏原文件已变化，旧覆盖文件仍在生效。请更新备份并重新构建相关准备包；现有制作保留。",
+                    "game_changed",
+                )
+            )
+    if base_updates:
+        integrity["level"] = "game_changed"
+        integrity["changed_files"] = max(integrity["changed_files"], len(base_updates))
+        integrity["base_file_updates"] = base_updates
+        integrity["issues"] = (base_updates + integrity.get("issues", []))[:6]
     return {
         "schema_version": 1,
         "kind": "file_integrity",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "baseline_plan": plan,
-        "integrity": _integrity_from_plan(
-            plan,
-            baseline_manifest=baseline_manifest,
-            pending_baseline_manifest=pending_baseline_manifest,
-            package_manifest=package_manifest,
-            last_applied_package_manifest=last_applied_package_manifest,
-            package_file_count=_package_file_count(package_manifest),
-        ),
+        "integrity": integrity,
     }
 
 
@@ -568,7 +602,7 @@ def print_integrity(payload: Dict[str, object]) -> None:
 
 
 def cmd_verify_integrity(args: argparse.Namespace) -> int:
-    game_dir = resolve_game_dir(args.game_dir)
+    game_dir = game_root_for(resolve_game_dir(args.game_dir))
     baseline_manifest = _resolve_existing_path(args.baseline_manifest)
     pending_baseline_manifest = _resolve_existing_path(args.pending_baseline_manifest)
     last_applied_package_manifest = _resolve_existing_path(args.last_applied_package_manifest)

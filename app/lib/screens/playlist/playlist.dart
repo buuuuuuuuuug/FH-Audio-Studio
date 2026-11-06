@@ -1049,7 +1049,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _pageHead(context, cli, view).tourAnchor('build'),
+                  _pageHead(context, cli, view),
                   const PackagePublicationRecovery(),
                   if (cli.projectEditingLocked) ...[
                     const SizedBox(height: 12),
@@ -1191,7 +1191,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
             children: [
               Expanded(child: heading),
               const SizedBox(width: 16),
-              actions,
+              actions.tourAnchor('build'),
             ],
           );
         }
@@ -1200,7 +1200,10 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
           children: [
             heading,
             const SizedBox(height: 12),
-            Align(alignment: Alignment.centerLeft, child: actions),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: actions.tourAnchor('build'),
+            ),
           ],
         );
       },

@@ -27,14 +27,15 @@ void main() {
     expect(toolsIndex, isNonNegative);
     expect(contentIndex, lessThan(toolsIndex));
     expect(kNavItems[contentIndex].label, '自建歌曲');
-    expect(kNavItems[toolsIndex].label, '塞壬唱片');
+    expect(kNavItems[toolsIndex].label, '语音替换');
     expect(kNavItems.map((item) => item.label), [
       '概览',
       '自建歌曲',
       '播放列表',
       '电台台呼',
-      '塞壬唱片',
       '语音替换',
+      '语音生成',
+      '塞壬唱片',
     ]);
     expect(kNavItems.where((item) => item.kbd != null), isEmpty);
   });

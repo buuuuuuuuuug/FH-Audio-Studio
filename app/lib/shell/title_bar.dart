@@ -1,5 +1,6 @@
 import '../widgets/rm_tooltip.dart';
 import '../widgets/feature_tour.dart';
+import '../screens/voices/speech_engine_dialog.dart';
 import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -81,6 +82,7 @@ class TitleBar extends ConsumerWidget {
                 ),
               ),
 
+              SpeechInstallIndicator(compact: compact),
               _statusItem(
                 context,
                 _toolchainLedKind(toolchain),

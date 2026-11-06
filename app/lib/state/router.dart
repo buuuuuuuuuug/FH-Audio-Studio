@@ -11,6 +11,7 @@ import '../screens/replace_editor.dart';
 import '../screens/siren_library.dart';
 import '../screens/stingers.dart';
 import '../screens/voice_replacement.dart';
+import '../screens/speech_studio.dart';
 import '../shell/app_shell.dart';
 import '../widgets/audio_editor_dialog.dart';
 import '../tweaks/tweaks_panel.dart';
@@ -25,6 +26,7 @@ class RmRoutes {
   static const playlist = '/playlist';
   static const stingers = '/stingers';
   static const voices = '/voices';
+  static const speech = '/speech';
   static const settings = '/settings';
   static String editor(String trackId, {bool fromPlaylist = false}) =>
       '/editor/${Uri.encodeComponent(trackId)}${fromPlaylist ? '?from=playlist' : ''}';
@@ -37,6 +39,7 @@ final GoRouter appRouter = GoRouter(
     GoRoute(path: '/', redirect: (_, _) => RmRoutes.boot),
     GoRoute(
       path: RmRoutes.boot,
+      onExit: (_, _) => confirmAudioEditorNavigation(),
       builder: (_, state) => ProjectPickerScreen(
         autoOpen: state.uri.queryParameters['manual'] != '1',
       ),
@@ -46,30 +49,46 @@ final GoRouter appRouter = GoRouter(
       routes: [
         GoRoute(
           path: RmRoutes.settings,
+          onExit: (_, _) => confirmAudioEditorNavigation(),
           pageBuilder: (_, _) => const NoTransitionPage(child: TweaksPanel()),
         ),
         GoRoute(
           path: RmRoutes.dashboard,
+          onExit: (_, _) => confirmAudioEditorNavigation(),
           pageBuilder: (_, _) =>
               const NoTransitionPage(child: DashboardScreen()),
         ),
         GoRoute(
           path: RmRoutes.pool,
+          onExit: (_, _) => confirmAudioEditorNavigation(),
           pageBuilder: (_, _) =>
               const NoTransitionPage(child: CustomPoolScreen()),
         ),
         GoRoute(
           path: RmRoutes.siren,
+          onExit: (_, _) => confirmAudioEditorNavigation(),
           pageBuilder: (_, _) =>
               const NoTransitionPage(child: SirenLibraryScreen()),
         ),
         GoRoute(
           path: RmRoutes.playlist,
+          onExit: (_, _) => confirmAudioEditorNavigation(),
           pageBuilder: (_, _) =>
               const NoTransitionPage(child: PlaylistScreen()),
         ),
         GoRoute(
+          path: RmRoutes.speech,
+          onExit: (_, _) => confirmAudioEditorNavigation(),
+          pageBuilder: (_, _) => const NoTransitionPage(
+            child: AudioEditorHost(
+              key: ValueKey('speech-editor-host'),
+              child: SpeechStudioScreen(),
+            ),
+          ),
+        ),
+        GoRoute(
           path: RmRoutes.voices,
+          onExit: (_, _) => confirmAudioEditorNavigation(),
           pageBuilder: (_, _) => const NoTransitionPage(
             child: AudioEditorHost(
               key: ValueKey('voice-editor-host'),
@@ -79,6 +98,7 @@ final GoRouter appRouter = GoRouter(
         ),
         GoRoute(
           path: RmRoutes.stingers,
+          onExit: (_, _) => confirmAudioEditorNavigation(),
           pageBuilder: (_, _) => const NoTransitionPage(
             child: AudioEditorHost(
               key: ValueKey('stinger-editor-host'),
@@ -88,9 +108,14 @@ final GoRouter appRouter = GoRouter(
         ),
         GoRoute(
           path: RmRoutes.editorPath,
-          onExit: (context, state) => ProviderScope.containerOf(
-            context,
-          ).read(unsavedEditsProvider).confirm(context, key: 'editor'),
+          onExit: (context, state) async {
+            if (!await ProviderScope.containerOf(
+              context,
+            ).read(unsavedEditsProvider).confirm(context, key: 'editor')) {
+              return false;
+            }
+            return confirmAudioEditorNavigation();
+          },
           pageBuilder: (_, state) => NoTransitionPage(
             child: ReplaceEditorScreen(
               trackId: state.pathParameters['trackId']!,

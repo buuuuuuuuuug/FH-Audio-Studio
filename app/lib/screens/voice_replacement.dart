@@ -1,3 +1,4 @@
+import '../core/workspace_snapshot.dart';
 import '../widgets/external_audio_drop_target.dart';
 import '../core/audio_import_error.dart';
 import '../widgets/editor_controls.dart';
@@ -9,6 +10,8 @@ import 'playlist/playlist_draggable.dart';
 import 'playlist/playlist_drag_preview.dart';
 import '../widgets/rm_tooltip.dart';
 import 'dart:async';
+import 'package:go_router/go_router.dart';
+import '../state/router.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -24,10 +27,14 @@ import '../core/fh_radio_studio_cli.dart';
 import '../core/studio_audio_players.dart';
 import '../core/atomic_file.dart';
 import '../core/voice_audition.dart';
+import '../core/speech_generation.dart';
+import '../core/speech_configuration.dart';
+import 'voices/speech_generation_panel.dart';
 import '../widgets/open_package_folder_button.dart';
 import '../core/deployment_preview.dart';
 import '../widgets/deployment_dialog.dart';
 import '../state/studio_state.dart';
+import '../state/editor_options.dart';
 import '../state/app_state.dart';
 import '../state/library_columns.dart';
 import '../theme/app_theme.dart';
@@ -54,6 +61,7 @@ part 'voices/voice_pool.dart';
 part 'voices/voice_dialogs.dart';
 part 'voices/voice_export.dart';
 part 'voices/voice_session.dart';
+part 'voices/voice_generation.dart';
 
 typedef VoiceRequest =
     Future<Map<String, dynamic>> Function(
@@ -80,13 +88,60 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
   Map<String, dynamic>? _pending;
   final _expanded = <String>{'电台 DJ', '活动与播报'};
   final _undo = <Map<String, dynamic>>[], _redo = <Map<String, dynamic>>[];
-  String _language = '当前语言', _assetCategory = '全部分类';
+  String _language = '当前语言';
   String? _selectedAsset, _error, _notice, _playing;
   String? _preferredBank;
   int _index = 0;
   bool _busy = false, _packageReady = false;
   int _importCount = 0;
   bool _layoutReady = false, _initialLoadStarted = false;
+  WorkspaceSnapshot? _diskSnapshot;
+  String _snapshotGame = '';
+  WorkspaceSnapshot _workspaceSnapshot() {
+    final languageKey = _currentTextLanguages;
+    final key = jsonEncode([_project, _snapshotGame, languageKey]);
+    if (_diskSnapshot?.key != key) {
+      _diskSnapshot = WorkspaceSnapshot(
+        p.join(_project, 'analysis', 'voices', 'workspace-view-v1.json'),
+        key,
+        _project,
+      );
+    }
+    return _diskSnapshot!;
+  }
+
+  void _persistView() {
+    final view = _session.view;
+    final cache = _diskSnapshot;
+    if (widget.request != null ||
+        !_session.loaded ||
+        view == null ||
+        cache == null) {
+      return;
+    }
+    unawaited(
+      cache
+          .write(view, [
+            p.join(_project, '.fh-radio-studio', 'voices.json'),
+            p.join(_snapshotGame, 'media', 'audio', 'FMODBanks'),
+            p.join(_snapshotGame, 'mediapc', 'audio', 'FMODBanks'),
+            for (final f in _files)
+              if ('${f['relative_path']}'.startsWith('media/'))
+                p.join(_snapshotGame, '${f['relative_path']}'),
+            for (final dir in [
+              'media/Stripped/StringTables',
+              'media/Audio',
+              'media/Scripts',
+            ])
+              if (Directory(p.join(_snapshotGame, dir)).existsSync())
+                ...Directory(
+                  p.join(_snapshotGame, dir),
+                ).listSync().whereType<File>().map((f) => f.path),
+          ])
+          .catchError((Object _) {}),
+    );
+  }
+
   String? _textLanguages, _requestedTextLanguages;
   String get _currentTextLanguages {
     final studio = ref.read(studioProvider);
@@ -122,18 +177,21 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
   String _busyText = '';
   final _catalogs = <String, Map<String, dynamic>>{};
   final _selectedAssets = <String>{};
-  List<String> get _orderedSelectedAssets => _assets
-      .where((a) => _selectedAssets.contains('${a['id']}'))
-      .map((a) => '${a['id']}')
-      .toList();
+  List<String> _displayAssetOrder = [];
+  List<String> get _orderedSelectedAssets => {
+    ..._displayAssetOrder,
+    ..._assets.map((a) => '${a['id']}'),
+  }.where(_selectedAssets.contains).toList();
   final _assetFolders = <String>{'未分类'};
   final _openAssetFolders = <String>{'未分类', '试听素材'};
   final _entryScroll = ScrollController(), _tableScroll = ScrollController();
   final _fileScroll = ScrollController();
+  final _generationScroll = ScrollController();
   final _previewPaths = <String, String>{};
   final _assetWaves = <String, Future<Map<String, dynamic>>>{};
   final _assetWaveData = <String, Map<String, dynamic>>{};
   double _leftWidth = 190, _rightWidth = 220;
+  bool _resourcesCollapsed = false, _poolCollapsed = false;
   final _columns = <double>[38, 150, 180, 180, 74, 38, 145, 90, 74, 112];
   final _desiredColumns = <double>[34, 250, 220, 220, 66, 34, 220, 64, 66, 84];
   List<Map<String, dynamic>>? _columnContentSource;
@@ -151,6 +209,8 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
       key,
       jsonEncode({
         'left': _leftWidth,
+        'resources_collapsed': _resourcesCollapsed,
+        'pool_collapsed': _poolCollapsed,
         'right': _rightWidth,
         'v3_columns': _desiredColumns,
         'comparison_ratio': _comparisonRatio,
@@ -178,7 +238,9 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
           .62,
         ).clamp(0.0, 1.0);
         _leftWidth = stingerNumber(data['left'], 190).clamp(125, 2500);
-        _rightWidth = stingerNumber(data['right'], 220).clamp(145, 2500);
+        _resourcesCollapsed = data['resources_collapsed'] == true;
+        _poolCollapsed = data['pool_collapsed'] == true;
+        _rightWidth = stingerNumber(data['right'], 220).clamp(220, 2500);
         final cols = data['v3_columns'];
         if (cols is List && cols.length == _columns.length) {
           for (var i = 0; i < cols.length; i++) {
@@ -196,6 +258,11 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
 
   late final VoiceWorkspaceSession _session;
   late final String _project;
+  SpeechGenerationSession? _speech;
+  List<Map<String, dynamic>>? _generationEntries;
+  int _generationRevision = 0;
+  String _assetSort = 'added', _assetStatus = 'all', _assetCategory = '';
+  bool _assetDescending = false;
   StingerSession? _materialWorker;
   int _playGeneration = 0;
   int? _activePlayGeneration;
@@ -215,6 +282,35 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
       return;
     }
     _initialLoadStarted = true;
+    if (widget.request == null) {
+      final cache = _workspaceSnapshot();
+      final cached = await cache.read();
+      if (!mounted) return;
+      if (cached != null && cache.key == _workspaceSnapshot().key) {
+        final preferred = _preferredBank, languageFilter = _language;
+        setState(() {
+          _restoreWorkspace(cached);
+          final catalog = _catalogs[preferred];
+          if (preferred != null &&
+              preferred != _preferredBank &&
+              catalog != null) {
+            _preferredBank = preferred;
+            _bank = stingerMap(catalog['bank']);
+            _entries = stingerMaps(catalog['entries']);
+            _pending = _files
+                .where((f) => f['bank_id'] == preferred)
+                .firstOrNull;
+            _index = _entries.isEmpty ? 0 : _entries.first['index'] as int;
+            _fileSearch.clear();
+            _entrySearch.clear();
+          }
+          _language = languageFilter;
+          _session.loaded = true;
+        });
+        await _recoverDraft();
+        return;
+      }
+    }
     await _scan();
     if (mounted && _session.loaded) {
       await _recoverDraft();
@@ -226,6 +322,10 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
     super.initState();
     final studio = ref.read(studioProvider);
     _project = studio.projectDir;
+    _snapshotGame =
+        localDevelopmentConfig()['audio_scan_root'] as String? ??
+        studio.gameDir;
+    _workspaceSnapshot();
     _session = ref.read(
       voiceWorkspaceSessionProvider(
         jsonEncode([
@@ -239,6 +339,12 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
     if (_session.view case final data?) _restoreWorkspace(data);
     if (_textLanguages != _currentTextLanguages) _session.loaded = false;
     ref.listenManual(studioProvider, (previous, next) {
+      if (previous?.targetLang != next.targetLang &&
+          _playing?.startsWith('original:') == true) {
+        _playGeneration++;
+        unawaited(_voicePlayer.pause());
+        _update(() => _playing = null);
+      }
       if (!next.busy) {
         unawaited(_loadInitialWorkspace());
         _refreshTextLanguages();
@@ -258,6 +364,11 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
     Future.microtask(() async {
       if (!mounted) return;
       _layoutReady = true;
+      if (_session.loaded &&
+          await _workspaceSnapshot().read() == null &&
+          mounted) {
+        await _scan();
+      }
       await _loadInitialWorkspace();
     });
   }
@@ -265,11 +376,13 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
   @override
   void dispose() {
     _cacheWorkspace();
+    _speech?.removeListener(_refreshGenerated);
     _materialWorker?.dispose();
     _playGeneration++;
     _completed?.cancel();
     if (_auditionPlayer != null) unawaited(_auditionPlayer!.pause());
     _entryScroll.dispose();
+    _generationScroll.dispose();
     _tableScroll.dispose();
     _fileScroll.dispose();
     _fileSearch.dispose();
@@ -298,7 +411,7 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
     }
     if (widget.request != null) return widget.request!(action, options);
     if (_materialWorker != null &&
-        const {'asset', 'asset-info'}.contains(action)) {
+        const {'asset', 'asset-info', 'remove-assets'}.contains(action)) {
       return _materialWorker!.call(
         action,
         asset: options['asset'] as String?,
@@ -394,13 +507,25 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
   }
 
   Future<void> _scan() => _guard(() async {
+    await _session.flushDrafts();
     final languages = _requestedTextLanguages = _currentTextLanguages;
-    final data = await _session.readScan(() => _call('scan'), key: languages);
+    _workspaceSnapshot();
+    final followLanguage = _language == '当前语言' && _textLanguages != languages;
+    final data = await _session.readScan(
+      () => _call('scan', {
+        'input': {
+          'selected_path': _pending?['relative_path'],
+          'follow_voice_language': followLanguage,
+        },
+      }),
+      key: languages,
+    );
     if (!mounted) return;
     setState(() {
       _files = stingerMaps(data['files']);
       _session.loaded = true;
       _textLanguages = languages;
+      _rebaseUpdatedBanks(stingerMap(data['plan']));
       _hydrate(stingerMap(data['plan']), initial: _edits.isEmpty);
       _packageReady = data['package_ready'] == true;
       for (final item in stingerMap(data['catalogs']).entries) {
@@ -408,10 +533,29 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
       }
       final catalog = _catalogs['${_bank['id']}'];
       if (_bank.isNotEmpty && catalog != null) {
+        _bank = stingerMap(catalog['bank']);
         _entries = stingerMaps(catalog['entries']);
+        _notice =
+            (_bank['update_error'] ?? _bank['update_notice']) as String? ??
+            _notice;
       }
       final active = stingerMap(_catalogs[_preferredBank] ?? data['active']);
-      if (_bank.isEmpty && active.isNotEmpty) {
+      final languageFile = stingerMap(data['selected_file']);
+      if (followLanguage && languageFile.isNotEmpty) {
+        _exportEntries.clear();
+        _entryAnchor = null;
+        _selectingExport = false;
+        _playGeneration++;
+        if (_playing != null) unawaited(_voicePlayer.pause());
+        _playing = null;
+        _pending = languageFile;
+        final catalog = stingerMap(data['active']);
+        _bank = stingerMap(catalog['bank']);
+        _preferredBank = _bank['id'] as String?;
+        _entries = stingerMaps(catalog['entries']);
+        if (!_entries.any((e) => e['index'] == _index)) _index = 0;
+      }
+      if (languageFile.isEmpty && _bank.isEmpty && active.isNotEmpty) {
         _bank = stingerMap(active['bank']);
         _entries = stingerMaps(
           _catalogs['${_bank['id']}']?['entries'] ?? active['entries'],
@@ -438,6 +582,7 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
         _language = '全部语言';
       }
     });
+    _cacheWorkspace();
   });
   Future<bool> _confirm(String title, String message, String action) async =>
       await showDialog<bool>(
@@ -586,20 +731,26 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
         replacements = _replacements..remove('$_index');
     next['${_bank['id']}'] = replacements;
     _change(next);
+    _speech?.dismissPreviews(target: {'bank_id': _bank['id'], 'index': _index});
   }
 
   Future<void> _restoreFile() async {
     if (_locked || _replacements.isEmpty) return;
     if (!await _confirm(
-      '恢复此文件的原有语音？',
+      '清除此文件的全部替换？',
       '将清除此文件的 ${_replacements.length} 条替换，其他资源保持不变。保存并构建后生效，可撤销。',
-      '恢复原音',
+      '清除替换',
     )) {
       return;
     }
     final next = stingerClone(_edits);
     next['${_bank['id']}'] = <String, dynamic>{};
     _change(next);
+    for (final entry in _entries) {
+      _speech?.dismissPreviews(
+        target: {'bank_id': _bank['id'], 'index': entry['index']},
+      );
+    }
   }
 
   Future<Map<String, dynamic>> _loadAssetWave(Map<String, dynamic> asset) {
@@ -633,11 +784,12 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
     if (_playing != null) await _voicePlayer.pause();
     _update(() => _playing = null);
     if (!mounted) return;
+    final editorWidth = ref.read(layoutOptionsProvider).manualRefineWidth;
     final accepted = await showAudioEditorDialog<Map<String, dynamic>>(
       context: context,
       builder: (ctx) => VoiceClipEditor(
         featureTour: true,
-        preferredWidth: ref.read(layoutOptionsProvider).manualRefineWidth,
+        preferredWidth: editorWidth,
         asset: asset,
         initial: edit,
         folders: _assetFolders.toList(),
@@ -712,7 +864,9 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
     final key = kind == 'asset'
         ? 'asset:$asset'
         : '$kind:${_bank['id']}:$_index';
-    if (_playing == key) {
+    if (_playing == key &&
+        (_activePlayGeneration == null ||
+            (_voicePlayer.state.playing && !_voicePlayer.state.completed))) {
       _playGeneration++;
       await _voicePlayer.pause();
       _update(() => _playing = null);
@@ -727,11 +881,20 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
     try {
       Map<String, dynamic> audio;
       if (kind == 'original') {
-        final cached = _entry?['preview_path'];
+        final language = ref.read(studioProvider).targetLang;
+        final cacheKey = '$key:$language:pristine-v2';
+        final cached = _previewPaths[cacheKey];
         audio = cached == null
-            ? await _call('original', {'bank': _bank['id'], 'index': _index})
+            ? await _call('original', {
+                'bank': _bank['id'],
+                'index': _index,
+                'input': {
+                  'voice_language': language,
+                  'display_language': ref.read(studioProvider).sourceLang,
+                },
+              })
             : {'path': cached};
-        if (_entry != null) _entry!['preview_path'] = audio['path'];
+        _previewPaths[cacheKey] = '${audio['path']}';
       } else {
         final edit = kind == 'asset'
             ? _assets.firstWhere((a) => a['id'] == asset)

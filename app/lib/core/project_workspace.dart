@@ -172,6 +172,7 @@ class FhRadioStudioProject {
     bool? splitPlaylistTypes,
     bool? lastBuildExpansionEnabled,
     bool? slmEnabled,
+    bool? speechEnabled,
   }) {
     ensure(projectDir);
     final manifest = File(manifestPath(projectDir));
@@ -193,6 +194,9 @@ class FhRadioStudioProject {
     if (syncPostLoop != null) settings['sync_post_loop'] = syncPostLoop;
     if (manualOnly != null) settings['manual_only'] = manualOnly;
     if (sirenEnabled != null) settings['siren_enabled'] = sirenEnabled;
+    if (speechEnabled != null) {
+      settings['speech_generation_enabled'] = speechEnabled;
+    }
     if (expansionEnabled != null) {
       settings['expansion_enabled'] = expansionEnabled;
     }

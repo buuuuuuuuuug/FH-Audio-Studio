@@ -40,7 +40,6 @@ import '../../theme/text_styles.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/rm_banner.dart';
 import '../../widgets/song_metadata_button.dart';
-import '../../widgets/bpm_edit_button.dart';
 import '../../widgets/rm_button.dart';
 import '../../widgets/rm_icon.dart';
 import '../../widgets/rm_chip.dart';
@@ -945,16 +944,9 @@ class _ReplaceEditorScreenState extends ConsumerState<ReplaceEditorScreen> {
       spacing: 8,
       runSpacing: 8,
       children: [
-        BpmEditButton(
-          bpm: s.ai.bpm,
-          manual: s.bpmManual,
-          enabled:
-              !s.analyzing &&
-              !ref.watch(studioProvider).busy &&
-              !ref.watch(studioProvider).customSongEditingLocked,
-          onApply: n.setBpm,
-        ),
         SongMetadataButton(
+          bpm: s.ai.bpm,
+          onBpm: n.setBpm,
           title: t.title,
           artist: t.artist,
           enabled:
@@ -2776,7 +2768,6 @@ class _ReplaceEditorScreenState extends ConsumerState<ReplaceEditorScreen> {
                         onPressed: () => Navigator.of(context).pop('cancel'),
                         label: '暂不保存',
                       ),
-                      const SizedBox(width: 10),
                       RmButton(
                         onPressed: () => Navigator.of(context).pop('save'),
                         variant: RmButtonVariant.primary,
@@ -3643,7 +3634,6 @@ class _ManualRefineOverlayState extends State<_ManualRefineOverlay> {
     ),
     _manualAuditionButton(context),
     const AuditionSettingsButton(compact: true).tourAnchor('audition'),
-    if (session.kind.isLoop) _endpointToggle(context),
   ];
 
   Widget _manualAuditionButton(BuildContext context) {
@@ -3656,50 +3646,6 @@ class _ManualRefineOverlayState extends State<_ManualRefineOverlay> {
       size: RmButtonSize.md,
       leading: RmIcon(isLoop ? 'loop' : 'play', size: 12),
       label: isLoop ? '试听拼接' : '试听',
-    );
-  }
-
-  /// A/B 端点切换，放在传输条行尾，对应当前正在放置的循环端点。
-  Widget _endpointToggle(BuildContext context) {
-    final rm = context.rm;
-    final acc = groupAccent(rm, session.kind);
-    Widget seg(String label, FineTarget target) {
-      final on = session.activeTarget == target;
-      return GestureDetector(
-        onTap: () => onPickTarget(target),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
-          decoration: BoxDecoration(
-            color: on ? acc.base : Colors.transparent,
-            borderRadius: BorderRadius.circular(5),
-          ),
-          child: Text(
-            label,
-            style: RmText.mono(
-              11,
-              weight: FontWeight.w700,
-              color: on ? Colors.white : rm.fg3,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      height: 32,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: rm.raised,
-        border: Border.all(color: rm.border),
-        borderRadius: BorderRadius.circular(RmTokens.rSm),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          seg('端点 A', FineTarget.loopStart),
-          seg('端点 B', FineTarget.loopEnd),
-        ],
-      ),
     );
   }
 
@@ -4088,7 +4034,18 @@ class _ManualRefineOverlayState extends State<_ManualRefineOverlay> {
           if (seamless && !candidate.why.startsWith('SeamlessLoopMusic'))
             Text('当前点位 · 未评估衔接', style: RmText.sans(10.5, color: rm.fg4))
           else
-            _confidenceBar(context, candidate.score),
+            Row(
+              children: [
+                _confidenceBar(context, candidate.score),
+                if (candidate.noteDifference != null) ...[
+                  const SizedBox(width: 10),
+                  Text(
+                    '音高偏差 ${candidate.noteDifference!.toStringAsFixed(3)}',
+                    style: RmText.mono(10.5, color: rm.fg3),
+                  ),
+                ],
+              ],
+            ),
         ],
       );
     }

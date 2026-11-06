@@ -166,8 +166,10 @@ class AudioLoopCandidate {
     required this.score,
     required this.bars,
     required this.why,
+    this.noteDifference,
   });
 
+  final double? noteDifference;
   final double start;
   final double end;
   final double score;
@@ -653,6 +655,10 @@ Map<String, List<AudioLoopCandidate>> _parseLoopCandidates(
               score: _asDouble(map['score']) ?? 0,
               bars: _asInt(map['bars']) ?? 0,
               why: '${map['why'] ?? ''}',
+              noteDifference: _asDouble(
+                _asMap(map['evidence'])?['note_difference'] ??
+                    map['note_difference'],
+              ),
             ),
       ],
   };

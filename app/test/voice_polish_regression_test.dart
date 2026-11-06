@@ -66,6 +66,9 @@ void main() {
           [],
           responder: (a, o) async => a == 'scan' ? data.scan() : {},
         );
+        await t.ensureVisible(
+          find.byKey(const ValueKey('voice-pool-multiselect')),
+        );
         await t.tap(find.byKey(const ValueKey('voice-pool-multiselect')));
         await t.pumpAndSettle();
         final rects = [

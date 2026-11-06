@@ -905,7 +905,7 @@ class ReplaceEditorNotifier extends StateNotifier<ReplaceEditorState> {
         .toDouble();
     final end = math
         .max(boundedEnd, start + 0.05)
-        .clamp(start + 0.05, duration)
+        .clamp(math.min(start + 0.05, duration), duration)
         .toDouble();
     final candidate = LoopCandidate(
       start: start,
@@ -1211,6 +1211,7 @@ AiResult _aiFromAnalysis(AudioAnalysisResult result) {
             end: item.end.clamp(item.start + 0.5, duration).toDouble(),
             score: item.score,
             bars: item.bars <= 0 ? 1 : item.bars,
+            noteDifference: item.noteDifference,
             why: item.why.isEmpty ? '$label · AI v2 建议' : item.why,
           ),
       ];

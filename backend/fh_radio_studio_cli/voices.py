@@ -4,9 +4,11 @@ import copy
 import hashlib
 import json
 import math
+import re
 import shutil
 from pathlib import Path
 
+from .bank_expansion import sound_hash
 from .common import CliError, md5_file
 from .deployment_paths import effective_game_file
 from .fsb5 import parse_fsb5_bytes
@@ -58,7 +60,7 @@ def category(name):
     return "其他音频"
 
 
-def scan(project, game, **text_languages):
+def scan(project, game, selected_path=None, follow_voice_language=False, **text_languages):
     files = {}
     capabilities_path = project / "analysis/voices/scan-capabilities.json"
     capabilities = (
@@ -83,7 +85,9 @@ def scan(project, game, **text_languages):
                 "size": path.stat().st_size,
                 "layer": layer,
             }
-    plan = load_plan(project)
+    from .voice_update import synchronize
+
+    plan = synchronize(project, game, **text_languages)
     from .voice_workspace import cached_catalogs, probe
 
     catalogs = cached_catalogs(project, plan, game, **text_languages)
@@ -108,6 +112,8 @@ def scan(project, game, **text_languages):
                 modified=bool(bank["replacements"]),
                 status="可替换" if bank["supported"] else "仅试听" if bank["count"] else "无法解析",
                 reason=bank["reason"],
+                update_notice=bank.get("update_notice"),
+                update_error=bank.get("update_error"),
             )
         else:
             path = Path(file["path"])
@@ -121,6 +127,21 @@ def scan(project, game, **text_languages):
             file.update(status=status, reason=reason)
         if file["status"] == "无法解析" and not file.get("custom"):
             file["category"] = "无法解析／控制文件"
+    selected_file = None
+    if follow_voice_language:
+        current = selected_path or (active or {}).get("bank", {}).get("relative_path")
+        voice = text_languages.get("voice_language")
+        locale = {"CHS": "CN", "CHT": "TW"}.get(voice, voice)
+        if current and locale:
+            counterpart = re.sub(
+                r"_(?:BR|CN|DE|EN|ES|IT|JP|KO|MX|TW)(?=(?:\.assets)?\.bank$)",
+                "_" + locale,
+                current,
+                flags=re.IGNORECASE,
+            )
+            selected_file = files.get(counterpart)
+            if selected_file:
+                active = catalogs.get(selected_file.get("bank_id"))
     package = project / "packages/voices-current/package/fh_radio_studio_package_manifest.json"
     _write(capabilities_path, capabilities)
     package_ready = False
@@ -134,12 +155,13 @@ def scan(project, game, **text_languages):
         "files": list(files.values()),
         "plan": plan,
         "active": active,
+        "selected_file": selected_file,
         "catalogs": catalogs,
         "package_ready": package_ready,
     }
 
 
-def prepare(project, game, source, args=None, **text_languages):
+def prepare(project, game, source, args=None, *, _adopt_current=False, **text_languages):
     source = Path(source).expanduser().resolve()
     if not source.is_file() or source.suffix.lower() not in EXTENSIONS:
         raise CliError("请选择存在的音频资源文件。")
@@ -152,7 +174,7 @@ def prepare(project, game, source, args=None, **text_languages):
     relative = relative or f"media/audio/FMODBanks/{source.name}"
     identity = hashlib.sha256(relative.encode()).hexdigest()[:24]
     plan = load_plan(project)
-    existing = plan["banks"].get(identity)
+    existing = plan["banks"].get(identity) if not _adopt_current else None
     if existing and plan.get("last_selected_bank") != identity:
         plan["last_selected_bank"] = identity
         _write(plan_path(project), plan)
@@ -210,6 +232,7 @@ def prepare(project, game, source, args=None, **text_languages):
                     {
                         "index": 0,
                         "name": source.stem,
+                        "original_filename": source.name,
                         "duration": meta.samples / meta.sample_rate,
                         "samples": meta.samples,
                         "frequency": meta.sample_rate,
@@ -247,12 +270,26 @@ def prepare(project, game, source, args=None, **text_languages):
     return {"bank": bank, "entries": entries, "plan": plan}
 
 
-def import_assets(project, paths, label):
+def safe_audio_name(value, limit=40):
+    text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(value)).strip(" .")[:limit].rstrip(" .")
+    if not text or text.upper().split(".")[0] in {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *[f"COM{i}" for i in range(1, 10)],
+        *[f"LPT{i}" for i in range(1, 10)],
+    }:
+        text = "生成语音"
+    return text
+
+
+def import_assets(project, paths, label, names=None):
     from .metadata import read_track_metadata
 
     plan = load_plan(project)
     imported = []
-    for value in paths:
+    for position, value in enumerate(paths):
         source = Path(value).expanduser().resolve()
         if not source.is_file() or source.suffix.lower() not in {
             ".wav",
@@ -275,12 +312,18 @@ def import_assets(project, paths, label):
         imported.append(sha)
         if any(a["id"] == sha for a in plan["assets"]):
             continue
-        target = project / "sources/voices" / (sha + source.suffix.lower())
+        display_name = str(names[position]) if names else source.stem
+        limit = min(40, 240 - len(str(project / "sources/voices")) - 16)
+        if names and limit < 1:
+            raise CliError("工程路径过长，请使用较短的工程目录后重试。")
+        filename = f"{safe_audio_name(display_name, limit)}_{sha[:8]}"
+        target = project / "sources/voices" / (filename + source.suffix.lower())
         _copy_snapshot(source, target)
         plan["assets"].append(
             {
                 "id": sha,
-                "name": source.stem,
+                "name": display_name,
+                "original_filename": source.name,
                 "source": project_path_or_absolute(project, target),
                 "sha256": sha,
                 "duration": duration,
@@ -346,22 +389,109 @@ def save(project, changes):
     for bank_id, replacements in changes.items():
         bank = plan["banks"][bank_id]
         bank["replacements"] = _validated_replacements(plan, bank, replacements)
+        # Saving is an explicit review of the refreshed, visible sound entries.
+        bank.pop("update_conflicts", None)
     _write(plan_path(project), plan)
     return {"saved": True, "plan": plan}
 
 
-def original(args, project, bank_id, index):
-    bank = load_plan(project)["banks"].get(bank_id)
+def original(args, project, bank_id, index, voice_language=None, display_language=None):
+    plan = load_plan(project)
+    bank = plan["banks"].get(bank_id)
     if not bank or not 0 <= index < bank["count"]:
         raise CliError("请先确认并解析资源文件，再选择试听条目。")
     source = local_file(project, bank["source"])
     if digest(source) != bank["sha256"]:
         raise CliError("原音频备份已变化。")
-    output = project / f"analysis/voices/original/{bank['sha256']}/{index + 1}.wav"
+    locale = {"CHS": "CN", "CHT": "TW"}.get(voice_language, voice_language)
+    suffix = r"_(BR|CN|DE|EN|ES|IT|JP|KO|MX|TW)(?=(?:\.assets)?\.bank$)"
+    current_locale = re.search(suffix, bank["relative_path"], re.IGNORECASE)
+    cross_language = bool(locale and current_locale and current_locale.group(1).upper() != locale)
+    relative = (
+        re.sub(suffix, "_" + locale, bank["relative_path"], flags=re.IGNORECASE)
+        if cross_language
+        else bank["relative_path"]
+    )
+    sha, source_kind = bank["sha256"], "project-backup"
+    if not bank.get("custom"):
+        # mediapc is the installed override, not the unmodified original. Older
+        # projects may have pinned that override; preserve their editing plan,
+        # but audition the matching sound from the base media bank instead.
+        game = game_root_for(Path(args.game_dir))
+        pristine = (game / relative).resolve()
+        if not pristine.is_relative_to((game / "media").resolve()):
+            raise CliError("原音频资源路径无效。")
+        if pristine.is_file():
+            sha, source_kind = digest(pristine), "game-original"
+            original_snapshot = (
+                project / ".fh-radio-studio/voices/baselines" / (sha + pristine.suffix.lower())
+            )
+            if not original_snapshot.is_file() or digest(original_snapshot) != sha:
+                _copy_snapshot(pristine, original_snapshot)
+            source = original_snapshot
+        elif cross_language:
+            raise CliError(f"游戏中没有对应的 {voice_language} 原音文件，请选择其他语音语言。")
+    elif cross_language:
+        raise CliError("自选资源不能推测其他语言的原音，请直接选择对应文件。")
+    if sha != bank["sha256"] or cross_language:
+        source_entries = json.loads(
+            (project / f"analysis/voices/catalog/{bank['sha256']}.json").read_text(encoding="utf-8")
+        )
+
+        def identity(name):
+            return re.sub(
+                r"_(?:BR|CN|DE|EN|ES|IT|JP|KO|MX|TW)(?=_|$)", "", name, flags=re.IGNORECASE
+            ).casefold()
+
+        name = source_entries[index]["name"]
+        raw = source.read_bytes()
+        matches = {
+            s.index
+            for s in parse_fsb5_bytes(raw, max_samples=32768).samples
+            if s.name and identity(s.name) == identity(name)
+        }
+        try:
+            lookup = read_bank(raw)[3]
+            if cross_language:
+                target_name = re.sub(
+                    r"_(?:BR|CN|DE|EN|ES|IT|JP|KO|MX|TW)(?=_|$)",
+                    "_" + locale,
+                    name,
+                    flags=re.IGNORECASE,
+                )
+                if sound_hash(target_name) in lookup:
+                    matches.add(lookup[sound_hash(target_name)])
+            else:
+                original_lookup = read_bank(local_file(project, bank["source"]).read_bytes())[3]
+                matches.update(
+                    lookup[key]
+                    for key, value in original_lookup.items()
+                    if value == index and key in lookup
+                )
+        except CliError:
+            # Named FSB samples can also be auditioned without a replaceable
+            # Vorbis bank layout. Never substitute an ordinal for missing IDs.
+            pass
+        if len(matches) != 1:
+            raise CliError(
+                f"没有找到此条目的唯一 {voice_language or '原版'} 原音，未使用覆盖文件或按序号猜测。"
+            )
+        index = matches.pop()
+    output = project / f"analysis/voices/original/{sha}/{index + 1}.wav"
     if not output.is_file():
         output.parent.mkdir(parents=True, exist_ok=True)
         _run([_tool(args, "vgmstream-cli"), "-s", index + 1, "-o", output, source])
-    return {"path": str(output)}
+    resolved_id = next(
+        (key for key, b in plan["banks"].items() if b["relative_path"] == relative), bank_id
+    )
+    return {
+        "path": str(output),
+        "voice_language": voice_language,
+        "bank_id": resolved_id,
+        "index": index,
+        "source_sha256": sha,
+        "source_kind": source_kind,
+    }
 
 
 def render(args, project, plan, entry, edit, output):
@@ -421,9 +551,16 @@ def freeze_for_build(args):
         for item in record.get("package_files", [])
     }
     game = game_root_for(Path(args.game_dir))
+    from .voice_update import synchronize
+
+    plan = synchronize(project, game, verify=True)
     checked_assets = set()
     assets = {asset["id"]: asset for asset in plan["assets"]}
     for bank in plan["banks"].values():
+        if (bank.get("update_error") and bank.get("replacements")) or bank.get("update_conflicts"):
+            raise CliError(
+                f"{bank['name']}：{bank.get('update_error') or bank.get('update_notice')} 请在语音替换页核对并保存后重建；旧制作已保留。"
+            )
         bank["replacements"] = _validated_replacements(plan, bank, bank["replacements"])
         if bank["replacements"]:
             try:
@@ -458,7 +595,9 @@ def freeze_for_build(args):
             original = local_file(project, bank["source"])
             bank["restore"] = owned_md5 != md5_file(original)
     # Keep an empty snapshot too, so a reused package cannot resurrect cleared voice files.
-    return {"project": str(project), "plan": plan}
+    from .game_update import audio_signature
+
+    return {"project": str(project), "plan": plan, "game_signature": audio_signature(game)}
 
 
 def compose_package(args):
@@ -552,6 +691,13 @@ def compose_package(args):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["voices"] = {"schema_version": 1, "banks": records, "runtime_verified": False}
     _write(manifest_path, manifest)
+    from .game_update import audio_signature, stamp_package_inputs
+
+    if frozen.get("game_signature") is not None and frozen["game_signature"] != audio_signature(
+        game_root_for(Path(args.game_dir))
+    ):
+        raise CliError("游戏音频文件在构建期间发生变化；制作和旧准备包已保留，请在更新结束后重建。")
+    stamp_package_inputs(game_root_for(Path(args.game_dir)), package)
     shutil.rmtree(Path(args.out_dir) / "work/voices", ignore_errors=True)
 
 
@@ -575,7 +721,13 @@ def cmd_voices(args):
 
     with exclusive_file_lock(project / ".fh-radio-studio/voices.lock", timeout_sec=10):
         if args.action == "scan":
-            result = scan(project, game, **language_options(data))
+            result = scan(
+                project,
+                game,
+                selected_path=data.get("selected_path"),
+                follow_voice_language=data.get("follow_voice_language", False),
+                **language_options(data),
+            )
         elif args.action == "prepare":
             result = prepare(project, game, args.source, args, **language_options(data))
             if data.get("custom"):
@@ -583,8 +735,6 @@ def cmd_voices(args):
                 _write(plan_path(project), result["plan"])
         elif args.action == "inspect":
             result = workspace.inspect(Path(args.source))
-        elif args.action == "extract-assets":
-            result = workspace.extract_assets(args, project, args.bank_id, data)
         elif args.action == "remove-assets":
             result = workspace.remove_assets(project, data)
         elif args.action == "asset-info":
@@ -608,7 +758,7 @@ def cmd_voices(args):
         elif args.action in {"deployment-preview", "deploy"}:
             result = workspace.deployment(args, project, game, data, write=args.action == "deploy")
         elif args.action == "original":
-            result = original(args, project, args.bank_id, args.index)
+            result = original(args, project, args.bank_id, args.index, **language_options(data))
         elif args.action == "preview":
             plan = load_plan(project)
             bank = plan["banks"][args.bank_id]

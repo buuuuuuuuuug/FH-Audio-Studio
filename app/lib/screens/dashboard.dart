@@ -8,7 +8,6 @@ import 'dart:io';
 import 'dart:math' as math;
 import '../widgets/editor_options_controls.dart';
 import '../widgets/seamless_loop_options.dart';
-import '../widgets/split_playlist_setting.dart';
 import '../state/editor_options.dart';
 
 import 'package:file_picker/file_picker.dart';
@@ -506,6 +505,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final ok = await _confirmChecklist(
       context,
       title: '创建原始备份',
+      plan: plan,
       body:
           '这会把当前 FH6 受保护文件记录为原始备份，用来区分官方文件、准备包和新游戏文件。请只在 fresh install 或 Steam 验证完整性之后执行。',
       action: '创建原始备份',
@@ -545,18 +545,18 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       context,
       title: '用当前游戏文件覆写原始备份？',
       body:
-          '这会把当前游戏目录里的受保护文件直接保存成新的原始备份。CLI 会同步清理当前准备包和测试准备包；App 会清空播放列表草稿，避免旧包和旧分配继续参与后续构建。',
+          '这会把当前游戏目录里的受保护文件直接保存成新的原始备份。仅更新原始文件备份；歌曲配置、播放列表草稿、台呼、语音替换和准备包均保留。写入前会重新校验游戏文件，过期的准备包需要重新构建。',
       action: '强制备份',
       danger: true,
       checks: const [
         '我确认 Forza Horizon 6 没有运行',
         '我理解当前原始备份会被覆盖',
-        '我理解准备包和播放列表草稿会被清空',
+        '我理解新备份应来自更新后的官方游戏文件，现有制作与准备包将保留',
       ],
     );
     if (!ok) return;
     if (!context.mounted) return;
-    await _rebuildBaselineFromGameAndClearPlaylist(context, c);
+    await _rebuildBaselineFromGame(context, c);
   }
 
   Future<void> _confirmPreparePendingPackage(
@@ -742,27 +742,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final ok = await _confirmChecklist(
       context,
       title: '用当前游戏文件重建原始备份？',
-      body: '这会把当前游戏目录里的受保护文件设为新的可信原始备份。CLI 会清理当前准备包和测试准备包；App 会清空播放列表草稿。',
+      body:
+          '将当前受保护的游戏原文件设为新的备份依据。歌曲配置、播放列表草稿、台呼、语音替换及准备包均保留；写入前会重新校验，过期的准备包需要重建。',
       action: '重建原始备份',
       danger: true,
       checks: const [
         '我确认当前游戏文件可以作为新的可信起点',
         '我理解当前原始备份会被覆盖',
-        '我理解准备包和播放列表草稿会被清空',
+        '我理解现有制作会保留，过期的准备包需要重新构建',
       ],
     );
     if (!ok) return;
     if (!context.mounted) return;
-    await _rebuildBaselineFromGameAndClearPlaylist(context, c);
+    await _rebuildBaselineFromGame(context, c);
   }
 
-  Future<void> _rebuildBaselineFromGameAndClearPlaylist(
+  Future<void> _rebuildBaselineFromGame(
     BuildContext context,
     StudioController c,
   ) async {
     final rebuilt = await c.rebuildBaselineFromCurrentGame();
     if (!context.mounted || !rebuilt) return;
-    ref.read(playlistPlanProvider.notifier).reload();
+    // Refreshing the original-file baseline must not reset editing drafts.
   }
 
   Future<bool> _confirmChecklist(
@@ -772,11 +773,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     required String action,
     required List<String> checks,
     bool danger = false,
+    BaselinePlanSummary? plan,
   }) async {
     final result = await showDialog<bool>(
       context: context,
       barrierColor: RmTokens.modalBackdrop,
       builder: (context) => _ChecklistDialog(
+        plan: plan,
         title: title,
         body: body,
         action: action,
@@ -2538,7 +2541,6 @@ class _SettingsStrip extends StatelessWidget {
                   ).tourAnchor('analysis'),
                 ),
                 const SeamlessLoopOptions().tourAnchor('seamless'),
-                const SplitPlaylistSetting(showAsSwitch: true),
               ],
             ),
           ),
@@ -2597,7 +2599,7 @@ class _SettingsCells extends StatelessWidget {
           languages: state.availableLanguages,
           tone: _displayLanguageTone(state),
           helper: _displayLanguageHelper(state),
-          enabled: state.voiceSlotVerified && !state.busy,
+          enabled: !state.busy,
           onChanged: controller.setSourceLang,
         ),
       ),
@@ -5330,6 +5332,7 @@ class _SimpleConfirmDialog extends StatelessWidget {
 
 class _ChecklistDialog extends StatefulWidget {
   const _ChecklistDialog({
+    this.plan,
     required this.title,
     required this.body,
     required this.action,
@@ -5337,6 +5340,7 @@ class _ChecklistDialog extends StatefulWidget {
     required this.danger,
   });
 
+  final BaselinePlanSummary? plan;
   final String title;
   final String body;
   final String action;
@@ -5359,7 +5363,7 @@ class _ChecklistDialogState extends State<_ChecklistDialog> {
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 48, vertical: 36),
       child: Container(
-        width: 560,
+        width: widget.plan == null ? 560 : 1040,
         decoration: BoxDecoration(
           color: rm.panel,
           border: Border.all(color: rm.border),
@@ -5378,35 +5382,97 @@ class _ChecklistDialogState extends State<_ChecklistDialog> {
               icon: widget.danger ? 'danger' : 'check',
               danger: widget.danger,
             ),
-            Padding(
-              padding: const EdgeInsets.all(22),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    widget.body,
-                    style: RmText.sans(13, color: rm.fg2, height: 1.55),
-                  ),
-                  const SizedBox(height: 14),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: rm.raised,
-                      border: Border.all(color: rm.border),
-                      borderRadius: BorderRadius.circular(RmTokens.rMd),
-                    ),
-                    child: Column(
-                      children: [
-                        for (int i = 0; i < widget.checks.length; i++)
-                          StudioChecklistItem(
-                            label: widget.checks[i],
-                            value: _checks[i],
-                            onChanged: (v) => setState(() => _checks[i] = v),
-                            last: i == widget.checks.length - 1,
+            Flexible(
+              child: SingleChildScrollView(
+                child: LayoutBuilder(
+                  builder: (context, box) {
+                    final form = Padding(
+                      padding: const EdgeInsets.all(22),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            widget.body,
+                            style: RmText.sans(13, color: rm.fg2, height: 1.55),
                           ),
-                      ],
-                    ),
-                  ),
-                ],
+                          const SizedBox(height: 14),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: rm.raised,
+                              border: Border.all(color: rm.border),
+                              borderRadius: BorderRadius.circular(RmTokens.rMd),
+                            ),
+                            child: Column(
+                              children: [
+                                for (int i = 0; i < widget.checks.length; i++)
+                                  StudioChecklistItem(
+                                    label: widget.checks[i],
+                                    value: _checks[i],
+                                    onChanged: (v) =>
+                                        setState(() => _checks[i] = v),
+                                    last: i == widget.checks.length - 1,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                    final plan = widget.plan;
+                    if (plan == null) return form;
+                    final listing = Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            '${plan.fileCount} 个文件 · ${(plan.totalSize / 1048576).toStringAsFixed(1)} MiB',
+                            style: RmText.sans(14, weight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 300,
+                            child: ListView.builder(
+                              itemCount: plan.files.length,
+                              itemBuilder: (_, i) {
+                                final file = plan.files[i];
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 5,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          file.installRelativePath,
+                                          style: RmText.mono(11, color: rm.fg2),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        '${(file.size / 1048576).toStringAsFixed(2)} MiB',
+                                        style: RmText.mono(11, color: rm.fg3),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                    return box.maxWidth < 800
+                        ? Column(children: [form, listing])
+                        : Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: form),
+                              Expanded(child: listing),
+                            ],
+                          );
+                  },
+                ),
               ),
             ),
             StudioModalFoot(
@@ -5742,9 +5808,7 @@ List<_ActivityItem> _activityForState(
     _ActivityItem(
       time: '状态',
       event: s.languageSummary,
-      meta: s.preferredLang == '未知'
-          ? 'UserPreferredLang 未读取'
-          : 'UserPreferredLang ${s.preferredLang}',
+      meta: '工程语言选择，不修改游戏语言文件',
       tone: _languageOverallTone(s),
     ),
     _ActivityItem(
@@ -5850,7 +5914,7 @@ _PillarModel _gamePillar(BuildContext context, StudioState s) {
         : s.gameRunning
         ? '游戏运行中'
         : '游戏未运行',
-    line: scanning ? '正在读取游戏运行状态、Steam build 和语言槽' : s.languageSummary,
+    line: scanning ? '正在读取游戏运行状态与 Steam build' : s.languageSummary,
     foot: [
       _StatusAtom(
         tone: scanning
@@ -5862,18 +5926,7 @@ _PillarModel _gamePillar(BuildContext context, StudioState s) {
             ? 'Steam 检查中'
             : s.gameSteamBuildLabel.replaceFirst('Steam build ', 'Steam '),
       ),
-      _StatusAtom(
-        tone: scanning ? _Tone.info : tone,
-        text: scanning
-            ? '语言检查中'
-            : s.languageReady && s.languageSelectionMatchesGame
-            ? '语言对齐'
-            : s.languageSelectionMatchesGame
-            ? '槽未同步'
-            : s.languageSelectionPrepared
-            ? '包已准备'
-            : '待准备',
-      ),
+      _StatusAtom(tone: scanning ? _Tone.info : tone, text: '语言自选'),
     ],
     more: scanning ? '处理中' : '编辑设置',
   );
@@ -6157,57 +6210,14 @@ _FileConclusion _fileConclusion(BuildContext context, StudioState s) {
   };
 }
 
-_Tone _displayLanguageTone(StudioState s) {
-  if (!s.voiceSlotVerified || !s.sourceLanguageExists) return _Tone.warn;
-  if (s.languageSelectionMatchesGame) return _Tone.ok;
-  if (s.languageSelectionPrepared) return _Tone.info;
-  return _Tone.danger;
-}
+_Tone _displayLanguageTone(StudioState s) => _Tone.ok;
 
-_Tone _voiceLanguageTone(StudioState s) {
-  if (!s.targetLanguageExists) return _Tone.warn;
-  if (s.languageSelectionMatchesGame) return _Tone.ok;
-  if (s.languageSelectionPrepared) return _Tone.info;
-  return _Tone.danger;
-}
+_Tone _voiceLanguageTone(StudioState s) => _Tone.ok;
 
-_Tone _languageOverallTone(StudioState s) {
-  if (s.languageReady && s.languageSelectionMatchesGame) return _Tone.ok;
-  if (s.languageSelectionPrepared) return _Tone.info;
-  if (!s.sourceLanguageExists ||
-      !s.targetLanguageExists ||
-      !s.voiceSlotVerified) {
-    return _Tone.warn;
-  }
-  return _Tone.danger;
-}
+_Tone _languageOverallTone(StudioState s) => _Tone.ok;
 
-String _displayLanguageHelper(StudioState s) {
-  if (!s.voiceSlotVerified) {
-    return '缺少原始备份，无法判断 ${s.gameTargetLang}.zip';
-  }
-  if (!s.sourceLanguageExists) return '缺少 ${s.sourceLang}.zip';
-  if (s.languageSelectionMatchesGame) {
-    return '游戏当前显示 ${s.gameSourceLang}';
-  }
-  if (s.languageSelectionPrepared) {
-    return '准备包已包含 ${s.sourceLang} 显示';
-  }
-  return '已改为 ${s.sourceLang}，尚未准备';
-}
-
-String _voiceLanguageHelper(StudioState s) {
-  if (!s.targetLanguageExists) return '缺少 ${s.targetLang}.zip';
-  if (s.languageSelectionMatchesGame) {
-    return s.preferredLang == '未设置' || s.preferredLang.toLowerCase() == 'auto'
-        ? 'UserPreferredLang auto'
-        : 'UserPreferredLang ${s.preferredLang}';
-  }
-  if (s.languageSelectionPrepared) {
-    return '准备包会写入 ${s.targetLang}';
-  }
-  return '已改为 ${s.targetLang}，尚未准备';
-}
+String _displayLanguageHelper(StudioState s) => '工具内文本语言 · 已保存';
+String _voiceLanguageHelper(StudioState s) => '原音试听与语音内容语言 · 已保存';
 
 _Tone _aiPipelineTone(StudioState s) {
   if (s.aiProfileNotice != null) return _Tone.warn;

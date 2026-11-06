@@ -61,6 +61,7 @@ class ManualFocusWaveform extends StatefulWidget {
     this.selectionStart,
     this.selectionEnd,
     this.timeGrid = false,
+    this.showTimeAxis = true,
   });
 
   final WaveformBars bars;
@@ -89,6 +90,7 @@ class ManualFocusWaveform extends StatefulWidget {
   final void Function(double start, double end)? onSelection;
   final double? selectionStart, selectionEnd;
   final bool timeGrid;
+  final bool showTimeAxis;
 
   /// 放点回调。[isMove] 区分按下（挑最近端点）与拖动（沿用当前端点）。
   final void Function(double seconds, {required bool isMove}) onPlace;
@@ -224,7 +226,7 @@ class _ManualFocusWaveformState extends State<ManualFocusWaveform> {
           ),
         ),
         const SizedBox(height: 6),
-        _timeAxis(rm),
+        if (widget.showTimeAxis) _timeAxis(rm) else const SizedBox(height: 14),
       ],
     );
   }

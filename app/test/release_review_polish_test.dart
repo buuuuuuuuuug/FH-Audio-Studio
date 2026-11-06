@@ -112,13 +112,9 @@ void main() {
           await t.pumpAndSettle();
           expect(outside.hasFocus, isFalse);
           await t.tap(
-            find.byKey(
-              ValueKey(
-                material
-                    ? 'voice-material-select-all'
-                    : 'voice-toggle-all-entries',
-              ),
-            ),
+            material
+                ? find.byKey(const ValueKey('voice-material-select-all'))
+                : find.byType(Checkbox).first,
           );
           await t.pumpAndSettle();
           if (searchFocused) {

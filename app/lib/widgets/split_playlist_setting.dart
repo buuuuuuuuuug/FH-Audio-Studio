@@ -31,7 +31,9 @@ class SplitPlaylistSetting extends ConsumerWidget {
         await showDialog<void>(
           context: context,
           builder: (dialogContext) => TimingDialogFrame(
-            title: '请先开启电台扩容',
+            title: '开启电台扩容后使用分场景编辑',
+            icon: 'list',
+            description: '分别安排漫游与比赛歌单',
             busy: false,
             width: 500,
             body: Text(
@@ -41,6 +43,8 @@ class SplitPlaylistSetting extends ConsumerWidget {
             actions: [
               RmButton(
                 label: '知道了',
+                variant: RmButtonVariant.primary,
+                leading: const RmIcon('check', size: 12),
                 onPressed: () => Navigator.pop(dialogContext),
               ),
             ],

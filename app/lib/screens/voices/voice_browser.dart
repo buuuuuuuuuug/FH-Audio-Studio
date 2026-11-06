@@ -16,24 +16,6 @@ const _voiceLanguageFilters = <String, String>{
 };
 
 extension _VoiceBrowser on _VoiceReplacementState {
-  Future<void> _warmCurrent() async {
-    if (_locked || !_readyFile || _entries.isEmpty) return;
-    final id = '${_bank['id']}';
-    await _guard(() async {
-      _update(() => _busyText = '正在补齐 ${_entries.length} 条试听缓存…');
-      final decoded = await _call('decode-all', {'bank': id});
-      final paths = stingerMap(decoded['paths']);
-      for (final entry in _entries) {
-        entry['preview_path'] = paths['${entry['index']}'];
-      }
-      _catalogs[id]!['decoded'] = true;
-      _update(() {
-        _busyText = '';
-        _notice = '全部试听音频已准备，可直接播放。';
-      });
-    });
-  }
-
   void _selectResource(Map<String, dynamic> file) {
     if (_locked) return;
     final cached =
@@ -274,9 +256,7 @@ extension _VoiceBrowser on _VoiceReplacementState {
       ..sort((a, b) => rank(a.key).compareTo(rank(b.key)));
     final modifiedPaths = <String>{
       for (final entry in _catalogs.entries)
-        if (stingerMap(_edits[entry.key]).isNotEmpty ||
-            jsonEncode(stingerMap(_edits[entry.key])) !=
-                jsonEncode(stingerMap(_saved[entry.key])))
+        if (stingerMap(_edits[entry.key]).isNotEmpty)
           '${stingerMap(entry.value['bank'])['relative_path']}',
     };
     bool changed(Map<String, dynamic> file) =>
@@ -519,7 +499,21 @@ extension _VoiceBrowser on _VoiceReplacementState {
           ),
         ],
       ),
-      trailing: Text('${_files.length}', style: RmText.mono(10, color: rm.fg3)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              '${_files.length}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: RmText.mono(10, color: rm.fg3),
+            ),
+          ),
+          const SizedBox(width: 4),
+          _paneToggle('resources'),
+        ],
+      ),
     );
   }
 }

@@ -63,7 +63,7 @@ class EditorTransport extends StatelessWidget {
     this.onUndo,
     this.onRedo,
     this.actions = const [],
-    this.inlineBreakpoint = 740,
+    this.inlineBreakpoint = 560,
     this.undoHint = '撤销 · Ctrl+Z',
     this.redoHint = '重做 · Ctrl+Y',
     this.playKey,

@@ -222,6 +222,40 @@ Created AI model manifest scaffold: C:\\FH Radio Studio\\models\\ai_tools_manife
       );
     });
 
+    test(
+      'status checks and restart synchronize the game voice language',
+      () async {
+        final projectDir = p.join(tempRoot.path, 'project');
+        FhRadioStudioProject.ensure(projectDir);
+        FhRadioStudioProject.writeSettings(
+          projectDir,
+          sourceLang: 'CHS',
+          targetLang: 'JP',
+        );
+        SharedPreferences.setMockInitialValues({_projectDirKey: projectDir});
+        final prefs = await SharedPreferences.getInstance();
+        final runtime = _testUvRuntime(tempRoot, 'voice-language');
+        final controller = _RecordingCliStudioController(
+          prefs,
+          _RecordingCli(runtime),
+        );
+        controller.setStateForTest(
+          controller.state.copyWith(
+            repoRoot: runtime.projectRoot,
+            gameDir: p.join(tempRoot.path, 'game'),
+          ),
+        );
+        await controller.refreshStatus();
+        expect(controller.state.targetLang, 'EN');
+        expect(controller.state.gameTargetLang, 'EN');
+        expect(
+          FhRadioStudioProject.readSettings(projectDir)['target_lang'],
+          'EN',
+        );
+        expect(StudioController(prefs).state.targetLang, 'EN');
+      },
+    );
+
     test('checks toolchain after changing the AI pipeline profile', () async {
       final projectDir = p.join(tempRoot.path, 'project');
       FhRadioStudioProject.ensure(projectDir);

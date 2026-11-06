@@ -89,6 +89,10 @@ def cached_catalog(project, game, locale, *, current_game=False):
     from .stingers import _read_catalog, _write, locale_code
 
     locale = locale_code(locale)
+    if not current_game:
+        from .game_update import synchronize_stingers
+
+        synchronize_stingers(project, game_root_for(game))
     key = catalog_key(project, game, locale, current_game)
     path = project / "analysis/stingers/catalog" / f"{locale}-{int(current_game)}.json"
     cached = _read(path)

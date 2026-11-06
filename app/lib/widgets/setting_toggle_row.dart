@@ -36,8 +36,10 @@ class SettingToggleRow extends StatelessWidget {
                     color: rm.fg,
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(description, style: RmText.sans(11.5, color: rm.fg3)),
+                if (description.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(description, style: RmText.sans(11.5, color: rm.fg3)),
+                ],
               ],
             ),
           ),

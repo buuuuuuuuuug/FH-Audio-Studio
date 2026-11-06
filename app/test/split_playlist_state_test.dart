@@ -156,7 +156,7 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('split-playlist-setting')));
     await tester.pumpAndSettle();
-    expect(find.text('请先开启电台扩容'), findsOneWidget);
+    expect(find.text('开启电台扩容后使用分场景编辑'), findsOneWidget);
     expect(c.read(editorOptionsProvider).expansionEnabled, isFalse);
     expect(c.read(playlistProvider).splitPlaylistTypes, isFalse);
     expect(c.read(effectivePlaylistPlanProvider).encodeForStorage(), before);

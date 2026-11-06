@@ -29,6 +29,7 @@ from .prepare import cmd_prepare_track
 from .radio_xml import cmd_patch_xml
 from .reconstruct_plan import cmd_reconstruct_plan
 from .seamless_loop import cmd_seamless_loops
+from .speech_generation import cmd_speech
 from .status import cmd_status
 from .stingers import cmd_stingers
 from .timing_import import cmd_export_timings, cmd_import_timings
@@ -75,6 +76,43 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="FH Radio Studio staging CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    speech = sub.add_parser("speech", help="Independent GPT-SoVITS synthesis and project job queue")
+    speech.add_argument(
+        "action",
+        choices=[
+            "serve",
+            "status",
+            "install",
+            "save-preset",
+            "delete-preset",
+            "select-preset",
+            "delete-candidate",
+            "submit",
+            "accept",
+            "pause",
+            "resume",
+            "retry",
+            "cancel",
+            "unload",
+            "clear-candidates",
+            "candidate-audio",
+            "configure-engine",
+            "check-engine",
+            "start-engine",
+            "stop-engine",
+            "restart-engine",
+            "engine-logs",
+            "export-preset",
+            "export-audio",
+            "acknowledge",
+        ],
+    )
+    speech.add_argument("--project-dir", required=True)
+    speech.add_argument("--engine-home")
+    speech.add_argument("--input-json")
+    speech.add_argument("--wait", action="store_true")
+    speech.set_defaults(func=cmd_speech)
+
     voices = sub.add_parser(
         "voices", help="Scan, back up and replace individual game voice samples"
     )
@@ -99,7 +137,6 @@ def build_parser() -> argparse.ArgumentParser:
             "deploy",
             "inspect",
             "export-text",
-            "extract-assets",
             "remove-assets",
             "serve",
         ],
@@ -624,7 +661,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_game_arg(baseline_create)
     baseline_create.add_argument(
         "--package-dir",
-        help="Optional package directory whose file list narrows what to baseline. When omitted, FH Radio Studio backs up all RadioInfo XML, R*_Tracks*.assets.bank files, and StringTables zips.",
+        help="Optional package directory whose file list narrows what to baseline. When omitted, back up radio configuration and radio audio banks. Language archives are excluded.",
     )
     baseline_create.add_argument(
         "--preferred-path", help="Override the UserPreferredLang file path"
@@ -737,7 +774,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_game_arg(lang)
     lang_sub = lang.add_subparsers(dest="lang_action", required=True)
     lang_list = lang_sub.add_parser("list", help="List available StringTables zip files")
-    add_common_game_arg(lang_list)
+    lang_list.add_argument(
+        "--game-dir", default=argparse.SUPPRESS, help="FH6 install root or media/audio folder"
+    )
     lang_list.set_defaults(func=cmd_language_swap)
     lang_pref = lang_sub.add_parser("preferred", help="Show FH6 UserPreferredLang")
     lang_pref.add_argument("--path", help="Override the UserPreferredLang file path")

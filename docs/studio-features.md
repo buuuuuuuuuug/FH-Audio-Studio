@@ -80,4 +80,4 @@ Optional XML station assignment updates only the Event draft and preserves FreeR
 Other sample rates and conflicting marker definitions are reported rather than converted.
 
 See [the illustrated overview](../README.md) and
-[complete changes and interchange rules](改动说明-详细版.md).
+[complete changes and interchange rules](Feature_Introduction.md).

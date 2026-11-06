@@ -108,3 +108,6 @@ known_first_party = ["backend", "tools"]
 
 [tool.setuptools.packages.find]
 include = ["backend*"]
+
+[tool.setuptools.package-data]
+"backend.fh_radio_studio_cli.tts_runtime" = ["pyproject.toml", "uv.lock"]

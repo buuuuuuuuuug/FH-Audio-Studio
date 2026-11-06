@@ -157,7 +157,7 @@ void main() {
             find.byKey(const ValueKey('voice-workbench-tools')),
           );
           final search = t.getRect(
-            find.byKey(const ValueKey('voice-workbench-search')),
+            find.byKey(const ValueKey('voice-entry-filter')),
           );
           final workflow = t.getRect(
             find.byKey(const ValueKey('voice-workflow-actions')),
@@ -165,8 +165,12 @@ void main() {
           if (title == '查找与批量操作') {
             expect(highlighted.left, closeTo(tools.left - 5, 1));
             expect(highlighted.right, closeTo(tools.right + 5, 1));
-            expect(highlighted.top, closeTo(tools.top - 5, 1));
-            expect(highlighted.bottom, closeTo(search.bottom + 5, 1));
+            expect(
+              highlighted.top,
+              inInclusiveRange(tools.top - 5, tools.bottom),
+            );
+            expect(highlighted.contains(search.center), isTrue);
+            expect(highlighted.bottom, lessThanOrEqualTo(tools.bottom + 5));
             expect(highlighted.overlaps(workflow), isFalse);
           } else {
             expect(highlighted.left, closeTo(workflow.left - 5, 1));
@@ -255,13 +259,7 @@ void main() {
           await t.pumpAndSettle();
           unawaited(c.read(featureToursProvider).showCurrent());
           await t.pumpAndSettle();
-          await completeGuide(t, [
-            '定位与选区',
-            '试听与撤销',
-            '简易音频编辑',
-            '素材信息与音量',
-            if (!metadata) '替换后的时长',
-          ]);
+          await completeGuide(t, ['定位与选区', '试听与撤销', '简易音频编辑', '素材信息与音量']);
         },
       );
     }

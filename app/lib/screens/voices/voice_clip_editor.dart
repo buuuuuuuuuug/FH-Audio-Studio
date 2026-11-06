@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../widgets/rm_tooltip.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import '../../core/studio_audio_players.dart';
 import '../../core/voice_audition.dart';
+import '../../widgets/rm_number_field.dart';
 import '../../core/waveform_zoom.dart';
 import '../../domain/replacement_models.dart';
 import '../../theme/app_theme.dart';
@@ -18,13 +20,62 @@ import '../../widgets/rm_field.dart';
 import '../../widgets/rm_icon.dart';
 import '../../widgets/rm_select.dart';
 import '../../widgets/rm_slider.dart';
-import '../../widgets/setting_toggle_row.dart';
 import '../../widgets/timing_dialog_frame.dart';
 import '../replace_editor/manual_focus_waveform.dart';
 import '../replace_editor/waveform_overview.dart';
 import '../stingers/stinger_models.dart';
 
 /// Shared non-destructive material editor. Rendering uses the Python audio path.
+class VoiceClipEditorController extends ChangeNotifier {
+  Object? _owner;
+  Future<void> Function()? _toggle;
+  VoidCallback? undo, redo;
+  Future<void> Function()? restore;
+  bool playing = false, busy = true;
+  Future<void> toggle() async {
+    if (!busy) await _toggle?.call();
+  }
+
+  void _bind(Object owner, Future<void> Function() toggle) {
+    _owner = owner;
+    _toggle = toggle;
+    busy = true;
+    undo = redo = null;
+    restore = null;
+  }
+
+  void _unbind(Object owner) {
+    if (!identical(_owner, owner)) return;
+    _owner = null;
+    _toggle = null;
+    undo = redo = null;
+    restore = null;
+  }
+
+  void _sync(
+    Object owner,
+    bool nextPlaying,
+    bool nextBusy,
+    VoidCallback? nextUndo,
+    VoidCallback? nextRedo,
+    Future<void> Function()? nextRestore,
+  ) {
+    if (!identical(_owner, owner)) return;
+    final changed =
+        playing != nextPlaying ||
+        busy != nextBusy ||
+        (undo == null) != (nextUndo == null) ||
+        (redo == null) != (nextRedo == null) ||
+        (restore == null) != (nextRestore == null);
+    playing = nextPlaying;
+    busy = nextBusy;
+    undo = nextUndo;
+    redo = nextRedo;
+    restore = nextRestore;
+    if (changed) notifyListeners();
+  }
+}
+
 class VoiceClipEditor extends StatefulWidget {
   const VoiceClipEditor({
     super.key,
@@ -38,6 +89,11 @@ class VoiceClipEditor extends StatefulWidget {
     this.title,
     this.preferredWidth = 1080,
     this.featureTour = false,
+    this.embedded = false,
+    this.onChanged,
+    this.replacementInline = false,
+    this.controller,
+    this.empty = false,
   });
   final Map<String, dynamic> asset;
   final Map<String, dynamic>? initial;
@@ -49,11 +105,17 @@ class VoiceClipEditor extends StatefulWidget {
   final String? title;
   final double preferredWidth;
   final bool featureTour;
+  final bool embedded;
+  final ValueChanged<Map<String, dynamic>>? onChanged;
+  final bool replacementInline;
+  final bool empty;
+  final VoiceClipEditorController? controller;
   @override
   State<VoiceClipEditor> createState() => _VoiceClipEditorState();
 }
 
 class _VoiceClipEditorState extends State<VoiceClipEditor> {
+  static _VoiceClipEditorState? _playbackOwner;
   late final TextEditingController _name;
   final _newFolderName = TextEditingController(),
       _silenceMs = TextEditingController(text: '100');
@@ -87,6 +149,7 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
   Player? _player;
   StreamSubscription<Duration>? _positions;
   StreamSubscription<bool>? _completions;
+  StreamSubscription<bool>? _playingEvents;
   int _generation = 0;
   double get _duration => stingerNumber(_wave['duration'], _b - _a);
   double get _viewSpan => _span <= 0 ? _duration : _span;
@@ -104,10 +167,12 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
     'category': _folder,
     'edited_duration': _duration,
   };
+  void _publish() => widget.onChanged?.call({..._snapshot, 'wave': _wave});
 
   @override
   void initState() {
     super.initState();
+    widget.controller?._bind(this, _play);
     final edit = widget.initial ?? widget.asset;
     _keepDuration = edit['keep_duration'] == true;
     _a = stingerNumber(edit['start']);
@@ -123,7 +188,7 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
         _folders.add(parts.take(i).join('/'));
       }
     }
-    unawaited(_load());
+    if (!widget.empty) unawaited(_load());
   }
 
   Future<void> _load() async {
@@ -149,6 +214,7 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
         _wave = wave;
         _loading = false;
       });
+      _publish();
       unawaited(_preparePlayback());
     } on Object catch (e) {
       if (mounted) {
@@ -160,15 +226,28 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
     }
   }
 
+  @override
+  void didUpdateWidget(covariant VoiceClipEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller?._unbind(this);
+      widget.controller?._bind(this, _play);
+    }
+  }
+
   Future<void> _preparePlayback() async {
     final generation = _generation;
+    _playbackOwner = this;
     try {
       await prepareVoiceAudition(
         _player ??= StudioAudioPlayers.material,
         '${_wave['path']}',
         start: _position,
         gainDb: _gain,
-        isCurrent: () => mounted && generation == _generation,
+        isCurrent: () =>
+            mounted &&
+            generation == _generation &&
+            identical(_playbackOwner, this),
       );
     } on Object {
       // The play action reports output-device errors; preparing is optional.
@@ -177,10 +256,15 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
 
   @override
   void dispose() {
+    widget.controller?._unbind(this);
     _generation++;
     _positions?.cancel();
     _completions?.cancel();
-    if (_player != null) unawaited(_player!.pause());
+    _playingEvents?.cancel();
+    if (identical(_playbackOwner, this)) {
+      _playbackOwner = null;
+      if (_player != null) unawaited(_player!.pause());
+    }
     _name.dispose();
     _newFolderName.dispose();
     _silenceMs.dispose();
@@ -214,6 +298,7 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
       _selectionA = _selectionB = null;
       _error = null;
     });
+    _publish();
   }
 
   Future<void> _restoreAudio() async {
@@ -236,6 +321,7 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
         _position = _window = _span = 0;
         _selectionA = _selectionB = null;
       });
+      _publish();
     } on Object catch (e) {
       if (mounted) {
         setState(() => _error = '$e'.replaceFirst('FormatException: ', ''));
@@ -289,6 +375,7 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
         _window = 0;
         _span = 0;
       });
+      _publish();
     } on Object catch (e) {
       if (mounted) {
         setState(() => _error = '$e'.replaceFirst('FormatException: ', ''));
@@ -341,25 +428,38 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
 
   void _stop() {
     _generation++;
-    if (_player != null) unawaited(_player!.pause());
+    if (_player != null && identical(_playbackOwner, this)) {
+      unawaited(_player!.pause());
+    }
     _playing = false;
   }
 
   Future<void> _play() async {
     if (_starting || _loading || _wave.isEmpty) return;
-    if (_playing) {
+    if (_playing && _player?.state.completed != true) {
       setState(_stop);
       return;
     }
     final request = ++_generation;
+    _playbackOwner = this;
     setState(() {
       _starting = true;
       _error = null;
     });
     try {
       final player = _player ??= StudioAudioPlayers.material;
+      _playingEvents ??= player.stream.playing.listen((playing) {
+        if (!playing &&
+            mounted &&
+            identical(_playbackOwner, this) &&
+            _playing &&
+            !_starting &&
+            !player.state.completed) {
+          setState(() => _playing = false);
+        }
+      });
       _positions ??= player.stream.position.listen((position) {
-        if (!mounted || !_playing) return;
+        if (!mounted || !_playing || !identical(_playbackOwner, this)) return;
         final seconds = position.inMicroseconds / 1e6;
         if (_playEnd case final end? when seconds >= end) {
           unawaited(player.pause());
@@ -372,7 +472,12 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
         }
       });
       _completions ??= player.stream.completed.listen((done) {
-        if (done && mounted && _playing && !_starting && !_loading) {
+        if (done &&
+            mounted &&
+            identical(_playbackOwner, this) &&
+            _playing &&
+            !_starting &&
+            !_loading) {
           unawaited(_finishPlayback(_generation));
         }
       });
@@ -389,7 +494,10 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
         // Only a selected region has an end limit; seeking clears it explicitly.
         end: _playEnd,
         gainDb: _gain,
-        isCurrent: () => mounted && request == _generation,
+        isCurrent: () =>
+            mounted &&
+            request == _generation &&
+            identical(_playbackOwner, this),
       );
       if (mounted && request == _generation) {
         setState(() => _playing = true);
@@ -412,16 +520,21 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
       setState(() => _error = '请输入素材名称。');
       return;
     }
-    Navigator.pop(context, {
-      ..._snapshot,
-      'name': _name.text.trim(),
-      'wave': _wave,
-    });
+    final value = {..._snapshot, 'name': _name.text.trim(), 'wave': _wave};
+    if (widget.embedded) {
+      widget.onChanged?.call(value);
+    } else {
+      Navigator.pop(context, value);
+    }
   }
 
   Future<void> _finishPlayback(int generation) async {
     final end = _playEnd ?? _duration;
-    bool current() => mounted && generation == _generation && _playing;
+    bool current() =>
+        mounted &&
+        generation == _generation &&
+        _playing &&
+        identical(_playbackOwner, this);
     try {
       await waitForVoiceTail(_player!, end, isCurrent: current);
     } on Object {
@@ -485,14 +598,136 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.controller != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          widget.controller?._sync(
+            this,
+            _playing,
+            _loading || _starting,
+            _loading || _undo.isEmpty ? null : () => _history(false),
+            _loading || _redo.isEmpty ? null : () => _history(true),
+            _loading ? null : _restoreAudio,
+          );
+        }
+      });
+    }
+    if (widget.replacementInline) {
+      return Focus(
+        onKeyEvent: _key,
+        child: LayoutBuilder(
+          builder: (_, box) {
+            final tools = Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (_error != null)
+                      RmTooltip(
+                        message: _error!,
+                        child: SizedBox.square(
+                          dimension: 32,
+                          child: Center(
+                            child: RmIcon(
+                              'info',
+                              size: 13,
+                              color: context.rm.danger,
+                            ),
+                          ),
+                        ),
+                      ),
+                    EditorHistoryButtons(
+                      onUndo: _undo.isEmpty || widget.empty
+                          ? null
+                          : () => _history(false),
+                      onRedo: _redo.isEmpty || widget.empty
+                          ? null
+                          : () => _history(true),
+                    ),
+                    const SizedBox(width: 6),
+                    RmButton(
+                      label: '恢复原音',
+                      leading: const RmIcon('reset', size: 12),
+                      onPressed: widget.empty || _loading
+                          ? null
+                          : _restoreAudio,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                _compactEdits(),
+                const SizedBox(height: 4),
+                _compactVolume(),
+              ],
+            );
+            final wave = _waveform(
+              canvasHeight: 116,
+              showOverview: false,
+              showHeader: false,
+            );
+            return box.maxWidth >= 500
+                ? EditorColumns(
+                    main: wave,
+                    side: Align(alignment: Alignment.center, child: tools),
+                    sideWidth: 240,
+                    gap: 10,
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [wave, const SizedBox(height: 8), tools],
+                  );
+          },
+        ),
+      );
+    }
+    if (widget.embedded) {
+      return Focus(
+        onKeyEvent: _key,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _waveform(canvasHeight: 112),
+            const SizedBox(height: 8),
+            _transport(),
+            const SizedBox(height: 8),
+            LayoutBuilder(
+              builder: (_, box) => EditorWaveformPanel(
+                child: box.maxWidth >= 880
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(flex: 3, child: _compactEdits()),
+                          const SizedBox(width: 16),
+                          Expanded(flex: 2, child: _compactVolume()),
+                        ],
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _compactEdits(),
+                          const SizedBox(height: 6),
+                          _compactVolume(),
+                        ],
+                      ),
+              ),
+            ),
+            if (_error != null)
+              Text(_error!, style: RmText.sans(11, color: context.rm.danger)),
+          ],
+        ),
+      );
+    }
     final editor = Focus(
       autofocus: true,
       onKeyEvent: _key,
       child: TimingDialogFrame(
-        title: widget.title ?? (widget.metadata ? '语音素材' : '替换音频'),
+        title: widget.title ?? '语音素材',
         icon: 'volume',
         width: widget.preferredWidth,
-        showCloseHint: false,
         editorStyle: true,
         bodyPadding: const EdgeInsets.all(12),
         busy: _loading || _starting,
@@ -544,31 +779,10 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    if (widget.metadata)
-                      _metadata()
-                    else
-                      Text(
-                        '${widget.asset['name']}',
-                        style: RmText.sans(12, color: context.rm.fg2),
-                      ),
+                    _metadata(),
                     Divider(height: 24, color: context.rm.border),
 
                     _volume(),
-                    if (!widget.metadata) ...[
-                      Divider(height: 24, color: context.rm.border),
-                      SettingToggleRow(
-                        key: const ValueKey('voice-keep-duration'),
-                        title: '保持原时长',
-                        description: _keepDuration
-                            ? '不足补静音，超出裁剪。'
-                            : '使用编辑后的实际时长。',
-                        value: _keepDuration,
-                        onChanged: (v) {
-                          _checkpoint();
-                          setState(() => _keepDuration = v);
-                        },
-                      ).tourAnchor('duration'),
-                    ],
                   ],
                 ),
               ),
@@ -630,20 +844,44 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
         : editor;
   }
 
-  Widget _waveform({double canvasHeight = 132}) => EditorWaveformPanel(
+  Widget _waveform({
+    double canvasHeight = 132,
+    bool showOverview = true,
+    bool showHeader = true,
+  }) => EditorWaveformPanel(
     child: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          _hasSelection
-              ? '选区 ${stingerTime(_selectionA)} – ${stingerTime(_selectionB)} · ${stingerTime(_selectionB! - _selectionA!)}'
-              : '素材波形 · 右键拖动选择区域',
-          key: const ValueKey('material-selection-status'),
-          style: RmText.sans(11.5, color: context.rm.fg3),
-          maxLines: 1,
-        ),
-        const SizedBox(height: 6),
+        if (showHeader)
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _hasSelection
+                      ? '选区 ${stingerTime(_selectionA)} – ${stingerTime(_selectionB)} · ${stingerTime(_selectionB! - _selectionA!)}'
+                      : '素材波形 · 右键拖动选择区域',
+                  key: const ValueKey('material-selection-status'),
+                  style: RmText.sans(11.5, color: context.rm.fg3),
+                  maxLines: 1,
+                ),
+              ),
+              if (widget.embedded || widget.replacementInline) ...[
+                _icon(
+                  'zoom-out',
+                  '缩小',
+                  _wave.isEmpty ? null : () => _zoom(1.5),
+                ),
+                const SizedBox(width: 4),
+                _icon(
+                  'zoom-in',
+                  '放大 · Ctrl+滚轮',
+                  _wave.isEmpty ? null : () => _zoom(1 / 1.5),
+                ),
+              ],
+            ],
+          ),
+        if (showHeader) const SizedBox(height: 6),
         if (_wave.isNotEmpty) ...[
           LayoutBuilder(
             builder: (context, box) {
@@ -675,22 +913,45 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
               );
             },
           ),
-          const SizedBox(height: 6),
-          WaveformOverview(
-            key: const ValueKey('voice-clip-overview'),
-            height: 32,
+          if (showOverview) ...[
+            const SizedBox(height: 6),
+            WaveformOverview(
+              key: const ValueKey('voice-clip-overview'),
+              height: 32,
+              bars: _bars,
+              duration: _duration,
+              windowStart: _window,
+              windowEnd: math.min(_duration, _window + _viewSpan),
+              onWindowStart: (v) => setState(() => _window = v),
+            ),
+          ],
+        ] else if (widget.empty)
+          ManualFocusWaveform(
+            key: const ValueKey('voice-empty-waveform'),
             bars: _bars,
-            duration: _duration,
-            windowStart: _window,
-            windowEnd: math.min(_duration, _window + _viewSpan),
-            onWindowStart: (v) => setState(() => _window = v),
-          ),
-        ] else
+            beats: const [],
+            segments: const [],
+            duration: 1,
+            accent: context.rm.fg4,
+            handles: const [],
+            free: false,
+            locked: true,
+            canvasHeight: canvasHeight,
+            timeGrid: true,
+            showTimeAxis: false,
+            onPlace: (_, {required isMove}) {},
+          )
+        else
           SizedBox(
-            height: 150,
+            // Match the waveform canvas, flag padding, gap and time axis while
+            // loading. A shorter placeholder shrinks the right-hand controls.
+            height: widget.replacementInline ? canvasHeight + 24 : 150,
             child: Center(
               child: _loading
-                  ? const CircularProgressIndicator(strokeWidth: 2)
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : RmButton(
                       label: '重新读取波形',
                       onPressed: () => unawaited(_load()),
@@ -729,16 +990,17 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
     ],
   );
 
-  Widget _silenceStep(int delta, String icon) => SizedBox(
-    width: 22,
-    height: 15,
-    child: InkWell(
-      key: ValueKey('material-silence-step-$delta'),
-      onTap: () {
-        final value = double.tryParse(_silenceMs.text) ?? 100;
-        _silenceMs.text = (value + delta).clamp(50, 3600000).round().toString();
-      },
-      child: Center(child: RmIcon(icon, size: 11)),
+  Widget _silenceDuration() => SizedBox(
+    height: 32,
+    child: RmNumberField(
+      key: const ValueKey('material-silence-ms'),
+      enabled: !widget.empty,
+      controller: _silenceMs,
+      min: 50,
+      max: 3600000,
+      step: 50,
+      decimals: 0,
+      unit: 'ms',
     ),
   );
 
@@ -749,42 +1011,15 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
         children: [
           Text('静音时长', style: RmText.sans(12, color: context.rm.fg2)),
           const SizedBox(width: 8),
-          SizedBox(
-            width: 112,
-            height: 32,
-            child: TextField(
-              key: const ValueKey('material-silence-ms'),
-              controller: _silenceMs,
-              keyboardType: TextInputType.number,
-              textAlign: TextAlign.center,
-              textAlignVertical: TextAlignVertical.center,
-              decoration: rmFieldDecoration(context, hint: '100').copyWith(
-                suffixText: 'ms',
-                suffixIconConstraints: const BoxConstraints.tightFor(
-                  width: 22,
-                  height: 30,
-                ),
-                suffixIcon: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _silenceStep(50, 'chevron-up'),
-                    _silenceStep(-50, 'chevron-down'),
-                  ],
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 8,
-                ),
-              ),
-              style: RmText.mono(12, color: context.rm.fg),
-            ),
-          ),
+          SizedBox(width: 112, child: _silenceDuration()),
           const SizedBox(width: 8),
           RmButton(
             key: const ValueKey('material-insert-silence'),
             label: '插入静音',
             leading: const RmIcon('plus', size: 12),
-            onPressed: _loading ? null : () => _operation('insert'),
+            onPressed: _loading || _starting || widget.empty || _wave.isEmpty
+                ? null
+                : () => _operation('insert'),
           ),
         ],
       );
@@ -832,6 +1067,172 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
     },
   );
 
+  Widget _compactEdits() => LayoutBuilder(
+    builder: (_, box) {
+      final duration = _silenceDuration();
+      final insert = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('静音', style: RmText.sans(11.5, color: context.rm.fg3)),
+          const SizedBox(width: 5),
+          if (widget.replacementInline)
+            SizedBox(width: 88, child: duration)
+          else if (box.maxWidth < 480)
+            Expanded(child: duration)
+          else
+            SizedBox(width: 96, child: duration),
+          const SizedBox(width: 6),
+          if (widget.replacementInline) const Spacer(),
+          RmButton(
+            key: const ValueKey('material-insert-silence'),
+            label: '插入静音',
+            size: RmButtonSize.md,
+            leading: const RmIcon('plus', size: 12),
+            onPressed: _loading || _starting || widget.empty || _wave.isEmpty
+                ? null
+                : () => _operation('insert'),
+          ),
+        ],
+      );
+      final selection = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          RmButton(
+            key: const ValueKey('material-silence-selection'),
+            label: '选区静音',
+            size: RmButtonSize.md,
+            leading: const RmIcon('volume-x', size: 12),
+            onPressed: _loading || !_hasSelection
+                ? null
+                : () => _operation('silence'),
+          ),
+          const SizedBox(width: 6),
+          RmButton(
+            key: const ValueKey('material-delete-selection'),
+            label: '删除选区',
+            size: RmButtonSize.md,
+            leading: const RmIcon('trash', size: 12),
+            onPressed: _loading || !_hasSelection
+                ? null
+                : () => _operation('delete'),
+          ),
+        ],
+      );
+      if (widget.replacementInline) {
+        return Column(
+          key: const ValueKey('speech-inline-silence-grid'),
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(child: duration),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: RmButton(
+                    key: const ValueKey('material-insert-silence'),
+                    label: '插入静音',
+                    size: RmButtonSize.md,
+                    leading: const RmIcon('plus', size: 12),
+                    onPressed:
+                        _loading || _starting || widget.empty || _wave.isEmpty
+                        ? null
+                        : () => _operation('insert'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: RmButton(
+                    key: const ValueKey('material-silence-selection'),
+                    label: '选区静音',
+                    leading: const RmIcon('volume-x', size: 12),
+                    onPressed: _loading || !_hasSelection
+                        ? null
+                        : () => _operation('silence'),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: RmButton(
+                    key: const ValueKey('material-delete-selection'),
+                    label: '删除选区',
+                    leading: const RmIcon('trash', size: 12),
+                    onPressed: _loading || !_hasSelection
+                        ? null
+                        : () => _operation('delete'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      }
+      return box.maxWidth >= 480
+          ? Row(children: [insert, const Spacer(), selection])
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                insert,
+                const SizedBox(height: 6),
+                Align(alignment: Alignment.centerRight, child: selection),
+              ],
+            );
+    },
+  );
+
+  Widget _compactVolume() => Row(
+    key: const ValueKey('material-volume'),
+    children: [
+      Text('音量', style: RmText.sans(11.5, color: context.rm.fg3)),
+      const SizedBox(width: 5),
+      Expanded(
+        child: SizedBox(
+          height: 28,
+          child: RmSlider(
+            value: _gain,
+            min: -6,
+            max: 6,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            onChangeStart: (_) => _checkpoint(),
+            onChanged: widget.empty
+                ? null
+                : (v) {
+                    _stop();
+                    setState(() => _gain = v);
+                    _publish();
+                  },
+          ),
+        ),
+      ),
+      SizedBox(
+        width: 48,
+        child: Text(
+          '${_gain >= 0 ? '+' : ''}${_gain.toStringAsFixed(1)} dB',
+          textAlign: TextAlign.right,
+          style: RmText.mono(10.5, color: context.rm.fg3),
+        ),
+      ),
+      if (!widget.replacementInline) ...[
+        const SizedBox(width: 5),
+        RmButton(
+          label: '默认',
+          size: RmButtonSize.md,
+          onPressed: () {
+            _checkpoint();
+            _stop();
+            setState(() => _gain = 0);
+            _publish();
+          },
+        ),
+      ],
+    ],
+  );
+
   Widget _volume() => Column(
     key: const ValueKey('material-volume'),
     mainAxisSize: MainAxisSize.min,
@@ -852,6 +1253,7 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
               _checkpoint();
               _stop();
               setState(() => _gain = 0);
+              _publish();
             },
           ),
         ],
@@ -866,6 +1268,7 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
         onChanged: (v) {
           _stop();
           setState(() => _gain = v);
+          _publish();
         },
       ),
     ],
@@ -891,6 +1294,7 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
               SizedBox(
                 height: 34,
                 child: TextField(
+                  enabled: widget.metadata,
                   controller: _name,
                   style: RmText.sans(12.5, color: context.rm.fg),
                   decoration: rmFieldDecoration(context),
@@ -913,17 +1317,21 @@ class _VoiceClipEditorState extends State<VoiceClipEditor> {
                         for (final f in (_folders.toList()..sort()))
                           f: f.replaceAll('/', ' / '),
                       },
-                      onChanged: (v) {
-                        _checkpoint();
-                        setState(() => _folder = v);
-                      },
+                      onChanged: !widget.metadata
+                          ? null
+                          : (v) {
+                              _checkpoint();
+                              setState(() => _folder = v);
+                            },
                     ),
                   ),
                   const SizedBox(width: 6),
                   _icon(
                     'folder-plus',
                     '在所选文件夹中新建',
-                    () => setState(() => _addingFolder = !_addingFolder),
+                    !widget.metadata
+                        ? null
+                        : () => setState(() => _addingFolder = !_addingFolder),
                   ),
                 ],
               ),

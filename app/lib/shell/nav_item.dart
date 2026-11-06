@@ -4,6 +4,7 @@ import '../theme/app_theme.dart';
 import '../theme/text_styles.dart';
 import '../theme/tokens.dart';
 import '../widgets/rm_icon.dart';
+import '../widgets/rm_tooltip.dart';
 
 class NavSpec {
   const NavSpec({
@@ -25,9 +26,10 @@ const List<NavSpec> kNavItems = [
   NavSpec(id: 'dashboard', label: '概览', icon: 'dashboard'),
   NavSpec(id: 'pool', label: '自建歌曲', icon: 'music', group: '内容'),
   NavSpec(id: 'playlist', label: '播放列表', icon: 'list', group: '内容'),
-  NavSpec(id: 'stingers', label: '电台台呼', icon: 'music', group: '内容'),
-  NavSpec(id: 'siren', label: '塞壬唱片', icon: 'spark', group: '工具'),
+  NavSpec(id: 'stingers', label: '电台台呼', icon: 'radio', group: '内容'),
   NavSpec(id: 'voices', label: '语音替换', icon: 'volume', group: '工具'),
+  NavSpec(id: 'speech', label: '语音生成', icon: 'spark', group: '工具'),
+  NavSpec(id: 'siren', label: '塞壬唱片', icon: 'disc', group: '工具'),
 ];
 
 /// Sidebar 一行 nav-item，按 spec：
@@ -43,14 +45,18 @@ class NavItem extends StatefulWidget {
     required this.active,
     this.enabled = true,
     this.tooltip,
+    this.compact = false,
     this.onTap,
+    this.trailing,
   });
 
   final NavSpec spec;
   final bool active;
   final bool enabled;
   final String? tooltip;
+  final bool compact;
   final VoidCallback? onTap;
+  final Widget? trailing;
 
   @override
   State<NavItem> createState() => _NavItemState();
@@ -88,7 +94,12 @@ class _NavItemState extends State<NavItem> {
         child: Stack(
           children: [
             Container(
-              padding: const EdgeInsets.fromLTRB(13, 8, 10, 8),
+              height: 36,
+              padding: widget.compact
+                  ? EdgeInsets.symmetric(
+                      horizontal: widget.trailing == null ? 10 : 0,
+                    )
+                  : const EdgeInsets.symmetric(horizontal: 13),
               decoration: BoxDecoration(
                 color: bg,
                 borderRadius: BorderRadius.circular(RmTokens.rSm),
@@ -100,6 +111,9 @@ class _NavItemState extends State<NavItem> {
                 ),
               ),
               child: Row(
+                mainAxisAlignment: widget.compact
+                    ? MainAxisAlignment.center
+                    : MainAxisAlignment.start,
                 children: [
                   SizedBox(
                     width: 15,
@@ -112,17 +126,25 @@ class _NavItemState extends State<NavItem> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    widget.spec.label,
-                    style: RmText.sans(
-                      13,
-                      weight: active ? FontWeight.w600 : FontWeight.w400,
-                      color: fg,
+                  if (!widget.compact) const SizedBox(width: 10),
+                  if (!widget.compact)
+                    Expanded(
+                      child: Text(
+                        widget.spec.label,
+                        style: RmText.sans(
+                          13,
+                          weight: active ? FontWeight.w600 : FontWeight.w400,
+                          color: fg,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                  if (widget.spec.kbd != null) ...[
-                    const Spacer(),
+                  if (widget.trailing != null) ...[
+                    SizedBox(width: widget.compact ? 2 : 6),
+                    widget.trailing!,
+                  ],
+                  if (!widget.compact && widget.spec.kbd != null) ...[
                     Text(
                       widget.spec.kbd!,
                       style: RmText.mono(10.5, color: active ? rm.fg2 : rm.fg4),
@@ -132,7 +154,7 @@ class _NavItemState extends State<NavItem> {
               ),
             ),
             // active accent bar (3px wide, top 7, bottom 7, left 3)
-            if (active && enabled)
+            if (active && enabled && !widget.compact)
               Positioned(
                 left: 3,
                 top: 7,
@@ -149,8 +171,16 @@ class _NavItemState extends State<NavItem> {
         ),
       ),
     );
+    if (widget.compact) {
+      return RmTooltip(
+        message: enabled
+            ? widget.spec.label
+            : widget.tooltip ?? widget.spec.label,
+        child: item,
+      );
+    }
     if (widget.tooltip == null || enabled) return item;
-    return Tooltip(message: widget.tooltip!, child: item);
+    return RmTooltip(message: widget.tooltip!, child: item);
   }
 }
 

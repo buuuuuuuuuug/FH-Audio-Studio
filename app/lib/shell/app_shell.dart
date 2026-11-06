@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+import '../state/editor_options.dart';
+import '../core/speech_generation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,6 +33,15 @@ class AppShell extends ConsumerWidget {
     final activeId = _activeIdFor(location);
     final rm = context.rm;
     final cli = ref.watch(studioProvider);
+    if (ref.watch(editorOptionsProvider).speechEnabled &&
+        cli.projectDir.isNotEmpty) {
+      final speech = ref.read(
+        speechGenerationProvider(jsonEncode([cli.repoRoot, cli.projectDir])),
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) unawaited(speech.start());
+      });
+    }
     final blockForPackageBuild =
         cli.busy && _isPackageBuildLabel(cli.busyLabel);
     final blockForToolchainFix =
@@ -145,6 +157,7 @@ class AppShell extends ConsumerWidget {
     if (location.startsWith('/siren')) return 'siren';
     if (location.startsWith('/playlist')) return 'playlist';
     if (location.startsWith('/voices')) return 'voices';
+    if (location.startsWith('/speech')) return 'speech';
     if (location.startsWith('/stingers')) return 'stingers';
     if (location.startsWith('/editor')) return 'pool';
     if (location.startsWith('/settings')) return 'settings';

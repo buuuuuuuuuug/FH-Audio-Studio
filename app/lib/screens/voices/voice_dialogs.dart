@@ -84,7 +84,8 @@ extension _VoiceDialogs on _VoiceReplacementState {
 
   Future<void> _openDirectory(String relative) async {
     final root = ref.read(studioProvider).projectDir;
-    if (!relative.startsWith('analysis/voices/') &&
+    if (relative != 'analysis/voices' &&
+        !relative.startsWith('analysis/voices/') &&
         relative != 'sources/voices') {
       return;
     }
@@ -92,7 +93,9 @@ extension _VoiceDialogs on _VoiceReplacementState {
       p.normalize(p.joinAll([root, ...relative.split('/')])),
     ).absolute;
     try {
-      if (relative == 'sources/voices') await directory.create(recursive: true);
+      if (relative == 'sources/voices' || relative == 'analysis/voices') {
+        await directory.create(recursive: true);
+      }
       if (!await directory.exists()) {
         throw const FileSystemException('试听缓存尚未准备，请先准备全部试听');
       }
@@ -142,11 +145,12 @@ extension _VoiceDialogs on _VoiceReplacementState {
     if (_playing != null) await _voicePlayer.pause();
     _update(() => _playing = null);
     if (!mounted) return;
+    final editorWidth = ref.read(layoutOptionsProvider).manualRefineWidth;
     final accepted = await showAudioEditorDialog<Map<String, dynamic>>(
       context: context,
       builder: (ctx) => VoiceClipEditor(
         featureTour: true,
-        preferredWidth: ref.read(layoutOptionsProvider).manualRefineWidth,
+        preferredWidth: editorWidth,
         asset: asset,
         folders: _assetFolders.toList(),
         load: () => _loadAssetWave(asset),

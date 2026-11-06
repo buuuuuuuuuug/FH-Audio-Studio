@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 const appDisplayName = 'FH Audio Studio';
-const fallbackAppReleaseId = '1.0.0-preview.1+90';
+const fallbackAppReleaseId = '1.0.0-preview.2+91';
 const noneBuildCommitSha256 = 'None';
 
 const _definedReleaseId = String.fromEnvironment('FH_RADIO_STUDIO_RELEASE_ID');

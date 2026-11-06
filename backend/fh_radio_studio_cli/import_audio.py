@@ -170,21 +170,27 @@ def import_audio_file(
 ) -> Dict[str, object]:
     info = _audio_info(src)
     source_sample_rate = int(info.samplerate) if info is not None and info.samplerate else None
-    needs_transcode = source_sample_rate != TARGET_SAMPLE_RATE
+    needs_transcode = (
+        source_sample_rate != TARGET_SAMPLE_RATE or getattr(info, "channels", None) != 2
+    )
     src_inside_sources = _is_inside(src, source_dir)
 
     if not needs_transcode:
         if src_inside_sources:
             dst = src.resolve()
             action = "kept"
-            out_info = _audio_info(dst)
-            tags_written = _write_import_tags(
-                dst,
-                title=title,
-                artist=artist,
-                album=album,
-                cover_image=cover_image,
-            )
+            if any(value is not None for value in (title, artist, album, cover_image)):
+                out_info, tags_written = _copy_to_project(
+                    src,
+                    dst,
+                    require_completion_marker=require_completion_marker,
+                    title=title,
+                    artist=artist,
+                    album=album,
+                    cover_image=cover_image,
+                )
+            else:
+                out_info, tags_written = info, False
         else:
             dst = _unique_destination(source_dir, src.name)
             out_info, tags_written = _copy_to_project(

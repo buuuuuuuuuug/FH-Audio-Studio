@@ -47,90 +47,51 @@ void main() {
       expect(find.byType(SnackBar), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('voice-export-text')));
       await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('voice-extract-assets')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('voice-extract-assets')), findsNothing);
       await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
       await tester.tap(find.byKey(const ValueKey('voice-copy-content-1')));
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await tester.pumpAndSettle();
       expect(copied.length, 2);
-      expect(
-        find.byKey(const ValueKey('voice-extract-assets')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('voice-extract-assets')), findsNothing);
       expect(find.text('已选 1'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
 
-  testWidgets(
-    'original audio selection extracts only chosen entries to the shared material pool',
-    (tester) async {
-      Map<String, dynamic>? request;
-      final snapshot = data.scan();
-      await base.open(
-        tester,
-        const Size(1800, 950),
-        [],
-        responder: (a, o) async {
-          if (a == 'scan') return snapshot;
-          if (a == 'extract-assets') {
-            request = Map<String, dynamic>.from(o['input']);
-            final plan = data.scan()['plan'];
-            plan['assets'] = <dynamic>[
-              ...(plan['assets'] as List),
-              {
-                'id': 'original0',
-                'name': '原音频零',
-                'category': '原音频',
-                'duration': 2.0,
-              },
-              {
-                'id': 'original2',
-                'name': '原音频二',
-                'category': '原音频',
-                'duration': 2.0,
-              },
-            ];
-            return {
-              'plan': plan,
-              'asset_ids': ['original0', 'original2'],
-              'count': 2,
-              'added': 2,
-              'reused': 0,
-            };
-          }
-          return {};
-        },
-      );
-      await tester.tap(find.byKey(const ValueKey('voice-export-text')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('voice-entry-0')));
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-      await tester.tap(find.byKey(const ValueKey('voice-entry-2')));
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('voice-extract-assets')));
-      await tester.pumpAndSettle();
-      expect(find.text('2 条原音频 · 保留完整时长'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('voice-extract-confirm')));
-      await tester.pumpAndSettle();
-      expect(request!['indices'], [0, 2]);
-      expect(request!['category'], '原音频');
-      expect(find.text('原音频零'), findsOneWidget);
-      expect(find.text('原音频二'), findsOneWidget);
-      final cards = tester
-          .widgetList<TrackCard>(find.byType(TrackCard))
-          .where((c) => c.title.startsWith('原音频'))
-          .toList();
-      expect(cards.length, 2);
-      expect(cards.every((c) => c.selectionMode && c.selected), isTrue);
-      expect(find.byKey(const ValueKey('voice-material-move')), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    },
-  );
+  testWidgets('selected original entries export text without adding assets', (
+    tester,
+  ) async {
+    final actions = <String>[];
+    await base.open(
+      tester,
+      const Size(1800, 950),
+      [],
+      responder: (a, o) async {
+        actions.add(a);
+        return a == 'scan' ? data.scan() : {};
+      },
+    );
+    await tester.tap(find.byKey(const ValueKey('voice-export-text')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('voice-entry-0')));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.tap(find.byKey(const ValueKey('voice-entry-2')));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(find.text('已选 2'), findsOneWidget);
+    expect(find.byKey(const ValueKey('voice-extract-assets')), findsNothing);
+    expect(
+      tester
+          .widget<RmButton>(
+            find.byKey(const ValueKey('voice-export-selected-text')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    expect(actions, isNot(contains('extract-assets')));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'material multi-select uses playlist cards, checkboxes and clear/escape behavior',
@@ -163,7 +124,10 @@ void main() {
             .any((c) => c.selectionMode || c.selected),
         isFalse,
       );
-      expect(find.text('多选'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('voice-pool-multiselect')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -182,8 +146,10 @@ void main() {
       );
       expect(chip.variant, RmChipVariant.accent);
       expect(chip.showDot, isTrue);
-      final names = ['撤销', '重做', '恢复原音', '打开音频目录', '删除解析', '多选导出'];
+      final names = ['清除替换', '删除解析'];
       final buttons = [
+        find.byKey(const ValueKey('editor-history-undo')),
+        find.byKey(const ValueKey('editor-history-redo')),
         for (final name in names) find.widgetWithText(RmButton, name),
       ];
       for (final finder in buttons) {

@@ -11,12 +11,14 @@ class RmSelect<T> extends StatelessWidget {
     required this.onChanged,
     this.selectedPrefix,
     this.horizontalPadding = 10,
+    this.menuWidth,
   });
   final T value;
   final Map<T, String> items;
   final ValueChanged<T>? onChanged;
   final String? selectedPrefix;
   final double horizontalPadding;
+  final double? menuWidth;
   @override
   Widget build(BuildContext context) {
     final rm = context.rm;
@@ -30,6 +32,7 @@ class RmSelect<T> extends StatelessWidget {
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<T>(
+          menuWidth: menuWidth,
           value: value,
           isExpanded: true,
           isDense: true,

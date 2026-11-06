@@ -23,8 +23,16 @@ Future<void> main({
       Platform.environment['FH_RADIO_STUDIO_UI_TEST_PROJECT'] ??
       localDevelopmentConfig()['project_root'] as String?;
   if (localPreferences == null) {
+    // Independent first-launch packages must not reuse another install's state.
+    const preferencesPrefix = String.fromEnvironment(
+      'FH_RADIO_STUDIO_PREFERENCES_PREFIX',
+    );
     SharedPreferences.setPrefix(
-      uiTest == null ? 'fh_loop_lab.' : 'fh_loop_lab_ui_test.',
+      preferencesPrefix.isNotEmpty
+          ? preferencesPrefix
+          : uiTest == null
+          ? 'fh_loop_lab.'
+          : 'fh_loop_lab_ui_test.',
     );
   }
   final prefs = localPreferences ?? await SharedPreferences.getInstance();

@@ -80,6 +80,7 @@ List<PoolTrack> browseSongs(
   Set<String>? duplicates,
   PlaylistPlan? plan,
   bool splitTypes = false,
+  bool incompleteFirst = false,
 }) {
   final repeated = duplicates ?? duplicateSongs(all);
   final q = options.search.trim().toLowerCase();
@@ -124,7 +125,13 @@ List<PoolTrack> browseSongs(
           : a.title.toLowerCase().compareTo(b.title.toLowerCase());
     });
   }
-  return options.descending ? result.reversed.toList() : result;
+  final ordered = options.descending ? result.reversed.toList() : result;
+  return incompleteFirst
+      ? [
+          ...ordered.where((track) => !track.readyForBuild),
+          ...ordered.where((track) => track.readyForBuild),
+        ]
+      : ordered;
 }
 
 String _filename(String source) =>

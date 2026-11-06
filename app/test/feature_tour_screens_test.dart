@@ -2,7 +2,6 @@ import 'package:fh_radio_studio/domain/radio_library.dart';
 import 'package:fh_radio_studio/screens/custom_pool.dart';
 import 'package:fh_radio_studio/screens/dashboard.dart';
 import 'package:fh_radio_studio/screens/playlist.dart';
-import 'package:fh_radio_studio/screens/playlist/playlist_state.dart';
 import 'package:fh_radio_studio/screens/project_picker.dart';
 import 'package:fh_radio_studio/screens/replace_editor/replace_editor.dart';
 import 'package:fh_radio_studio/screens/replace_editor/replace_state.dart';
@@ -129,43 +128,21 @@ void main() {
         final container = await setup(t, const DashboardScreen(), width: width);
         expect(
           find.byKey(const ValueKey('split-playlist-setting')),
-          findsOneWidget,
+          findsNothing,
         );
         expect(find.text('还原默认'), findsNothing);
         await checkSteps(
           t,
-          [
-            '游戏与语言',
-            '分析模式',
-            '同步循环',
-            '电台扩容',
-            'SeamlessLoopMusic',
-            '分场景编辑',
-            '检查与写入',
-          ],
+          ['游戏与语言', '分析模式', '同步循环', '电台扩容', 'SeamlessLoopMusic', '检查与写入'],
           anchors: {
             '游戏与语言': 'game',
             '分析模式': 'analysis',
             '同步循环': 'sync',
             '电台扩容': 'expansion',
             'SeamlessLoopMusic': 'seamless',
-            '分场景编辑': 'split',
           },
         );
-        final splitSwitch = find.descendant(
-          of: find.byKey(const ValueKey('split-playlist-setting')),
-          matching: find.byType(Switch),
-        );
-        expect(t.widget<Switch>(splitSwitch).value, isFalse);
-        await Scrollable.ensureVisible(t.element(splitSwitch), alignment: .5);
-        await t.pumpAndSettle();
-        await t.tap(splitSwitch);
-        await t.pumpAndSettle();
-        expect(find.text('分开编辑漫游和比赛？'), findsOneWidget);
-        await t.tap(find.text('打开'));
-        await t.pumpAndSettle();
-        expect(container.read(playlistProvider).splitPlaylistTypes, isTrue);
-        expect(t.widget<Switch>(splitSwitch).value, isTrue);
+        expect(container.read(editorOptionsProvider).speechEnabled, isTrue);
         expect(t.takeException(), isNull);
       },
     );
@@ -196,7 +173,7 @@ void main() {
             ),
           ),
         );
-        await checkSteps(t, ['外观与布局', '调整工作区', '快捷键与塞壬唱片']);
+        await checkSteps(t, ['外观与布局', '调整工作区', '快捷键与功能']);
       },
     );
   }

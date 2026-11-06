@@ -302,6 +302,7 @@ class _CustomPoolScreenState extends ConsumerState<CustomPoolScreen> {
       duplicates: possibleDuplicates,
       plan: playlistPlan,
       splitTypes: splitTypes,
+      incompleteFirst: true,
     );
     final customRadios = kRadios
         .where((r) => kStationModes[r.code] == StationMode.custom)

@@ -16,6 +16,10 @@ class RmIcon extends StatelessWidget {
     switch (name) {
       case 'dashboard':
         return LucideIcons.layoutDashboard;
+      case 'radio':
+        return LucideIcons.radio;
+      case 'disc':
+        return LucideIcons.disc3;
       case 'swap':
         return LucideIcons.arrowLeftRight;
       case 'list':
@@ -26,6 +30,8 @@ class RmIcon extends StatelessWidget {
         return LucideIcons.history;
       case 'settings':
         return LucideIcons.settings;
+      case 'more-horizontal':
+        return LucideIcons.ellipsis;
       case 'play':
         return LucideIcons.play;
       case 'stop':

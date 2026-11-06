@@ -1,3 +1,6 @@
+import 'dart:io';
+import '../core/workspace_snapshot.dart';
+import 'package:path/path.dart' as p;
 import '../widgets/external_audio_drop_target.dart';
 import '../core/audio_import_error.dart';
 import '../core/voice_audition.dart';
@@ -315,6 +318,19 @@ class _StingersScreenState extends ConsumerState<StingersScreen> {
     var data = await _call('warm-cache');
     if (!mounted || key != _cacheKey) return;
     _sourceData = data;
+    if (ref.read(stingerRequestOverrideProvider) == null) {
+      final state = ref.read(studioProvider);
+      await _snapshotFor(key)
+          .write(data, [
+            p.join(state.projectDir, '.fh-radio-studio', 'stingers.json'),
+            p.join(state.gameDir, 'media', 'audio', 'FMODBanks'),
+            p.join(state.gameDir, 'mediapc', 'audio', 'FMODBanks'),
+            p.join(state.projectDir, 'sources'),
+            p.join(state.projectDir, 'siren'),
+          ])
+          .catchError((Object _) {});
+      if (!mounted || key != _cacheKey) return;
+    }
     if (!_gameView) {
       _draft.hydrate(data);
       data = _draft.render(data);
@@ -333,6 +349,21 @@ class _StingersScreenState extends ConsumerState<StingersScreen> {
     });
   }
 
+  WorkspaceSnapshot _snapshotFor(String key) {
+    final project = ref.read(studioProvider).projectDir;
+    return WorkspaceSnapshot(
+      p.join(
+        project,
+        'analysis',
+        'stingers',
+        'ui-cache',
+        '$_locale-${_gameView ? 1 : 0}.json',
+      ),
+      key,
+      project,
+    );
+  }
+
   Future<void> _load({bool force = false}) async {
     if (_working || (!force && _data != null && _loadedKey == _cacheKey)) {
       return;
@@ -347,13 +378,26 @@ class _StingersScreenState extends ConsumerState<StingersScreen> {
           if (!e.key.startsWith(prefix)) e.key: e.value,
       };
     }
-    final cached = ref.read(stingerMemoryCacheProvider)[key];
+    var cached = ref.read(stingerMemoryCacheProvider)[key];
+    if (!force &&
+        cached == null &&
+        ref.read(stingerRequestOverrideProvider) == null) {
+      cached = await _snapshotFor(key).read();
+      if (!mounted || key != _cacheKey) return;
+      if (cached != null) {
+        ref.read(stingerMemoryCacheProvider.notifier).state = {
+          ...ref.read(stingerMemoryCacheProvider),
+          key: cached,
+        };
+      }
+    }
     _selection = SongSelection();
-    if (!force && cached != null) {
+    final warm = cached;
+    if (!force && warm != null) {
       setState(() {
-        if (!_gameView) _draft.hydrate(cached);
-        _sourceData = cached;
-        _data = _gameView ? cached : _draft.render(cached);
+        if (!_gameView) _draft.hydrate(warm);
+        _sourceData = warm;
+        _data = _gameView ? warm : _draft.render(warm);
         _loadedKey = key;
       });
       return;
@@ -1476,24 +1520,49 @@ class _StingersScreenState extends ConsumerState<StingersScreen> {
     final rm = context.rm, visible = _visibleAssets;
     final visibleIds = visible.map((a) => '${a['id']}').toList();
     final selected = visibleIds.where(_selection.ids.contains).toList();
-    final header = Row(
-      children: [
-        Expanded(
-          child: PlaylistPoolHeader(
-            count: _assets.length,
-            title: '池子',
-            subtitle: '台呼素材',
-          ),
-        ),
-        const SizedBox(width: 6),
-        RmButton(
-          key: const ValueKey('stinger-import'),
-          label: '导入台呼',
-          leading: const RmIcon('plus', size: 12),
-          size: RmButtonSize.sm,
-          onPressed: locked ? null : _import,
-        ),
-      ],
+    final header = LayoutBuilder(
+      builder: (_, box) {
+        final narrow = box.maxWidth < 290;
+        return Row(
+          children: [
+            Expanded(
+              child: PlaylistPoolHeader(
+                count: _assets.length,
+                title: '池子',
+                subtitle: '台呼素材',
+              ),
+            ),
+            const SizedBox(width: 6),
+            RmButton(
+              key: const ValueKey('stinger-open-material-directory'),
+              label: narrow ? '目录' : '资源目录',
+              tooltip: '打开台呼素材目录',
+              leading: const RmIcon('folder', size: 12),
+              size: RmButtonSize.sm,
+              onPressed: () async {
+                final directory = Directory(
+                  p.join(
+                    ref.read(studioProvider).projectDir,
+                    'sources',
+                    'stingers',
+                  ),
+                );
+                await directory.create(recursive: true);
+                await ref.read(packageFolderOpenerProvider)(directory.path);
+              },
+            ),
+            const SizedBox(width: 6),
+            RmButton(
+              key: const ValueKey('stinger-import'),
+              label: narrow ? '导入' : '导入台呼',
+              tooltip: '导入台呼音频',
+              leading: const RmIcon('plus', size: 12),
+              size: RmButtonSize.sm,
+              onPressed: locked ? null : _import,
+            ),
+          ],
+        );
+      },
     );
     final controls = Padding(
       padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),

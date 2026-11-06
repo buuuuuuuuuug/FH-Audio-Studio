@@ -294,7 +294,7 @@ def test_baseline_restore_rejects_manifest_path_escape(tmp_path):
 
 
 def make_overlay_restore(tmp_path):
-    """Use the real default deployment flow so ownership is not fabricated."""
+    """Seed a known mod over an explicitly untrusted fixture, then test restore."""
     game, saved, files = make_baseline(tmp_path)
     stinger = "media/audio/FMODBanks/R1_Stingers_JP.assets.bank"
     for root, data in ((saved, b"original stinger"), (game, b"previous stinger")):
@@ -324,7 +324,7 @@ def make_overlay_restore(tmp_path):
             target_root="mediapc",
             baseline_manifest=str(manifest),
             last_applied_manifest=str(fingerprint),
-            force=False,
+            force=True,
             yes=True,
             preferred_path=None,
         )

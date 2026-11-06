@@ -12,7 +12,13 @@ void main() {
           {'start': 10, 'end': 80, 'score': double.nan},
           {'start': 10, 'end': 130, 'score': .9},
           {'start': 80, 'end': 10, 'score': .9},
-          {'start': 10, 'end': 80, 'score': .9, 'why': 'valid'},
+          {
+            'start': 10,
+            'end': 80,
+            'score': .9,
+            'why': 'valid',
+            'evidence': {'note_difference': .125},
+          },
         ],
       },
     });
@@ -20,6 +26,8 @@ void main() {
     expect(result.single.start, 10);
     expect(result.single.end, 80);
     expect(result.single.score, .9);
+    expect(result.single.noteDifference, .125);
+    expect(result.single.copyWith(start: 11).noteDifference, .125);
   });
 
   for (final duration in [null, '120', 0, -1, double.nan, double.infinity]) {

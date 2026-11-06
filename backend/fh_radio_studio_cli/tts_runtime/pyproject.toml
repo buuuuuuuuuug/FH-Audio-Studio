@@ -1,0 +1,34 @@
+[project]
+name = "fh-audio-studio-gpt-sovits"
+version = "1.0.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "python-multipart>=0.0.20,<1",
+  "torch==2.6.0+cu126", "torchaudio==2.6.0+cu126",
+  "numpy>=1.26,<2", "scipy>=1.12,<2", "soundfile>=0.12,<0.14",
+  "librosa==0.10.2", "resampy>=0.4,<0.5", "numba>=0.60", "pytorch-lightning>=2.4,<3",
+  "transformers>=4.51,<5", "peft>=0.17,<0.18",
+  "PyYAML>=6", "psutil>=6", "tqdm>=4.67", "ffmpeg-python>=0.2",
+  "cn2an>=0.5", "pypinyin>=0.53", "pyopenjtalk>=0.4.1",
+  "g2p-en>=2.1", "jieba-fast>=0.53", "jieba>=0.42", "split-lang>=2",
+  "fast-langdetect>=0.3.1", "wordsegment>=1.3", "rotary-embedding-torch>=0.8",
+  "ToJyutping>=3", "g2pk2>=0.0.3", "ko-pron>=1.3", "opencc>=1.1",
+  "x-transformers>=2", "torchmetrics<=1.5",
+  "onnxruntime-gpu>=1.20", "huggingface-hub<1",
+  # Official inference imports LightningModule and its LR scheduler (matplotlib).
+  # Keep these shared dependencies; training dashboards/tokenizers are excluded.
+  "matplotlib>=3.9",
+  "fastapi>=0.115,<1", "uvicorn>=0.30,<1",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torchaudio = { index = "pytorch-cu126" }
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true

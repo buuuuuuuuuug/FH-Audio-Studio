@@ -328,3 +328,15 @@ def test_business_timeout_is_not_misreported_as_another_build(tmp_path):
 
     with pytest.raises(TimeoutError, match="audio analysis deadline"):
         build(argparse.Namespace(out_dir=str(tmp_path / "current")))
+
+
+def test_package_location_owns_refs_even_with_external_metadata_cache(tmp_path):
+    import argparse
+
+    from backend.fh_radio_studio_cli.package import _project_dir_for_args
+
+    args = argparse.Namespace(
+        out_dir=str(tmp_path / "project" / "packages" / "current"),
+        metadata_cache=str(tmp_path / "cache" / ".fh-radio-studio" / "track_metadata.json"),
+    )
+    assert _project_dir_for_args(args) == (tmp_path / "project").resolve()

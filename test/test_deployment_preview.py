@@ -75,12 +75,12 @@ def test_preview_lists_actual_resources_settings_and_record_without_writing(proj
     before_project, before_game = snapshot(p), snapshot(game)
     data = preview(operation)
     assert snapshot(p) == before_project and snapshot(game) == before_game
-    assert data["resource_count"] == 3 and data["auxiliary_count"] == 2
+    assert data["resource_count"] == 2 and data["auxiliary_count"] == 1
     by_name = {item["file_name"]: item for item in data["writes"]}
     assert "日语" in by_name["R9_Stingers_JP.assets.bank"]["description"]
     assert "16" in by_name["R9_Stingers_JP.assets.bank"]["description"]
-    assert "简体中文" in by_name["JP.zip"]["description"]
-    assert by_name["UserPreferredLang"]["category"] == "setting"
+    assert "JP.zip" not in by_name
+    assert "UserPreferredLang" not in by_name
     assert by_name["last_applied_package_manifest.json"]["category"] == "record"
     assert not any("Tracks_" in item["file_name"] for item in data["writes"])
 

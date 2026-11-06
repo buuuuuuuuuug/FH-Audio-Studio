@@ -31,7 +31,7 @@ def setup(project, excluded):
 def test_preview_keeps_rows_and_reports_incompatible_selection(project):
     _, _, _, args = setup(project, [XML])
     data = preview(args)
-    assert len(data["writes"]) == 4
+    assert len(data["writes"]) == 3
     assert any(XML.split("/")[-1] in issue for issue in data["selection_issues"])
     xml = next(f for f in data["writes"] if f["file_name"] == "RadioInfo_JP.xml")
     assert xml["selected"] is False
@@ -51,9 +51,10 @@ def test_settings_only_does_not_copy_skipped_resources(project):
     p, game, _, args = setup(project, [BANK, XML, "@deployment-record"])
     args.json, args.yes = False, True
     before = snapshot(game)
-    assert args.func(args) == 0
+    with pytest.raises(CliError, match="至少选择一个"):
+        args.func(args)
     assert snapshot(game) == before
-    assert (p / "UserPreferredLang").read_text(encoding="utf-8") == "JP"
+    assert not (p / "UserPreferredLang").exists()
     assert not (p / ".fh-radio-studio/last_applied_package_manifest.json").exists()
 
 
@@ -94,7 +95,7 @@ def test_media_preview_keeps_choices_when_one_file_needs_a_backup(project):
     write(baseline, data)
     args.target_root = "media"
     result = preview(args)
-    assert len(result["writes"]) == 4
+    assert len(result["writes"]) == 3
     assert any("缺少原始备份" in issue for issue in result["selection_issues"])
     assert all(
         f["relative_path"].startswith("media/")

@@ -2,6 +2,10 @@ part of '../voice_replacement.dart';
 
 extension _VoiceView on _VoiceReplacementState {
   void _escapeWorkspace() {
+    if (_generationEntries != null) {
+      _update(() => _generationEntries = null);
+      return;
+    }
     if (_renamingFolder != null) {
       _update(() => _renamingFolder = null);
       return;
@@ -25,19 +29,32 @@ extension _VoiceView on _VoiceReplacementState {
           bindings: {
             const SingleActivator(LogicalKeyboardKey.keyS, control: true): () =>
                 unawaited(_save()),
-            const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () =>
-                _history(false),
-            const SingleActivator(LogicalKeyboardKey.keyY, control: true): () =>
-                _history(true),
-            const SingleActivator(LogicalKeyboardKey.space): () {
-              if (_entry != null) unawaited(_play('original'));
-            },
             const SingleActivator(LogicalKeyboardKey.escape): _escapeWorkspace,
           },
           child: Focus(
             focusNode: _workspaceFocus,
             autofocus: true,
             onKeyEvent: (_, event) {
+              final editing =
+                  FocusManager.instance.primaryFocus?.context
+                      ?.findAncestorStateOfType<EditableTextState>() !=
+                  null;
+              if (!editing && event is KeyDownEvent) {
+                final keyboard = HardwareKeyboard.instance;
+                if (keyboard.isControlPressed &&
+                    [
+                      LogicalKeyboardKey.keyZ,
+                      LogicalKeyboardKey.keyY,
+                    ].contains(event.logicalKey)) {
+                  _history(event.logicalKey == LogicalKeyboardKey.keyY);
+                  return KeyEventResult.handled;
+                }
+                if (event.logicalKey == LogicalKeyboardKey.space &&
+                    _entry != null) {
+                  unawaited(_play('original'));
+                  return KeyEventResult.handled;
+                }
+              }
               if (event is KeyDownEvent &&
                   event.logicalKey == LogicalKeyboardKey.escape &&
                   (ModalRoute.of(context)?.isCurrent ?? true)) {
@@ -56,7 +73,7 @@ extension _VoiceView on _VoiceReplacementState {
                   Expanded(
                     child: LayoutBuilder(
                       builder: (context, c) {
-                        final workspaceWidth = math.max(466.0, c.maxWidth);
+                        final workspaceWidth = math.max(590.0, c.maxWidth);
                         final centerMin = math.min(
                           320.0,
                           math.max(180.0, workspaceWidth - 286),
@@ -65,12 +82,14 @@ extension _VoiceView on _VoiceReplacementState {
                           200.0,
                           workspaceWidth - centerMin - 16,
                         );
-                        const minLeft = 125.0, minRight = 145.0;
-                        final leftExtra = math.max(0.0, _leftWidth - minLeft);
-                        final rightExtra = math.max(
-                          0.0,
-                          _rightWidth - minRight,
-                        );
+                        final minLeft = _resourcesCollapsed ? 36.0 : 125.0;
+                        final minRight = _poolCollapsed ? 36.0 : 220.0;
+                        final leftExtra = (_resourcesCollapsed
+                            ? 0.0
+                            : math.max(0.0, _leftWidth - minLeft));
+                        final rightExtra = _poolCollapsed
+                            ? 0.0
+                            : math.max(0.0, _rightWidth - minRight);
                         final factor = math.min(
                           1.0,
                           math.max(0.0, available - minLeft - minRight) /
@@ -85,7 +104,9 @@ extension _VoiceView on _VoiceReplacementState {
                             children: [
                               SizedBox(
                                 width: left,
-                                child: _library(),
+                                child: _resourcesCollapsed
+                                    ? _resourceRail()
+                                    : _library(),
                               ).tourAnchor('resources'),
                               _splitHandle(
                                 'voice-left-divider',
@@ -104,7 +125,7 @@ extension _VoiceView on _VoiceReplacementState {
                               ),
                               SizedBox(
                                 width: right,
-                                child: _pool(),
+                                child: _poolCollapsed ? _poolRail() : _pool(),
                               ).tourAnchor('pool'),
                             ],
                           ),
@@ -126,8 +147,65 @@ extension _VoiceView on _VoiceReplacementState {
           ),
         )
         .withAudioImportProgress(count: _importCount, noun: '语音素材')
-        .withFeatureTour(TourPage.voices, enabled: _session.loaded && !_busy);
+        .withFeatureTour(
+          TourPage.voices,
+          enabled: _session.loaded && !_busy && _generationEntries == null,
+        );
   }
+
+  Widget _resourceRail() => _collapsedRail('resources', '音频资源');
+  Widget _poolRail() => _collapsedRail('pool', '素材池');
+  void _togglePane(String id) {
+    _update(() {
+      if (id == 'resources') {
+        _resourcesCollapsed = !_resourcesCollapsed;
+        if (!_resourcesCollapsed && _leftWidth < 125) _leftWidth = 190;
+      } else {
+        _poolCollapsed = !_poolCollapsed;
+        if (!_poolCollapsed && _rightWidth < 220) _rightWidth = 220;
+      }
+    });
+    unawaited(_rememberLayout());
+  }
+
+  Widget _paneToggle(String id, {bool collapsed = false}) => SizedBox(
+    width: 24,
+    height: 24,
+    child: RmButton(
+      key: ValueKey('voice-${collapsed ? 'expand' : 'collapse'}-$id'),
+      size: RmButtonSize.sm,
+      horizontalPadding: 4,
+      leading: RmIcon(
+        id == 'resources'
+            ? (collapsed ? 'chevron-right' : 'chevron-left')
+            : (collapsed ? 'chevron-left' : 'chevron-right'),
+        size: 11,
+      ),
+      tooltip:
+          '${collapsed ? '展开' : '收起'}${id == 'resources' ? '音频资源' : '素材池'}',
+      onPressed: () => _togglePane(id),
+    ),
+  );
+  Widget _collapsedRail(String id, String title) => Container(
+    key: ValueKey('voice-$id-collapsed'),
+    decoration: BoxDecoration(
+      color: context.rm.panel,
+      border: Border.all(color: context.rm.border),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    padding: const EdgeInsets.symmetric(vertical: 7),
+    child: Column(
+      children: [
+        _paneToggle(id, collapsed: true),
+        const SizedBox(height: 12),
+        Text(
+          title.split('').join('\n'),
+          textAlign: TextAlign.center,
+          style: RmText.sans(12, color: context.rm.fg2, height: 1.5),
+        ),
+      ],
+    ),
+  );
 
   Widget _pageHeader() {
     final title = Column(
@@ -185,7 +263,7 @@ extension _VoiceView on _VoiceReplacementState {
                   height: 20,
                   child: RmButton(
                     leading: const RmIcon('x', size: 11),
-                    size: RmButtonSize.sm,
+                    size: RmButtonSize.md,
                     horizontalPadding: 0,
                     variant: RmButtonVariant.ghost,
                     tooltip: '关闭提示',
@@ -206,6 +284,27 @@ extension _VoiceView on _VoiceReplacementState {
       runSpacing: 6,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        if (ref.watch(editorOptionsProvider).speechEnabled)
+          RmButton(
+            key: const ValueKey('voice-open-generation'),
+            label: _generationEntries == null ? '语音生成' : '收起语音生成',
+            leading: const RmIcon('volume', size: 12),
+            onPressed: _locked || !_readyFile || _entry == null
+                ? null
+                : () {
+                    if (_generationEntries == null) {
+                      unawaited(_openGeneration());
+                    } else {
+                      _update(() => _generationEntries = null);
+                    }
+                  },
+          ),
+        RmButton(
+          key: const ValueKey('voice-open-audio-folder'),
+          label: '打开总目录',
+          leading: const RmIcon('folder', size: 12),
+          onPressed: () => _openDirectory('analysis/voices'),
+        ),
         RmButton(
           key: const ValueKey('voice-save'),
           label: '保存修改',
@@ -280,8 +379,8 @@ extension _VoiceView on _VoiceReplacementState {
         behavior: HitTestBehavior.opaque,
         dragStartBehavior: DragStartBehavior.down,
         onHorizontalDragStart: (d) {
-          _leftWidth = left;
-          _rightWidth = right;
+          if (!_resourcesCollapsed) _leftWidth = left;
+          if (!_poolCollapsed) _rightWidth = right;
           _paneDrag = (
             origin: d.globalPosition.dx,
             left: left,
@@ -296,17 +395,22 @@ extension _VoiceView on _VoiceReplacementState {
           final delta = d.globalPosition.dx - drag.origin;
           _update(() {
             if (id == 'voice-left-divider') {
-              _leftWidth = (drag.left + delta).clamp(
-                125.0,
-                math.max(125.0, drag.maxLeft),
-              );
-              _rightWidth = drag.right;
+              final width = drag.left + delta;
+              _resourcesCollapsed = width < 110;
+              if (!_resourcesCollapsed) {
+                _leftWidth = width.clamp(125.0, math.max(125.0, drag.maxLeft));
+              }
+              if (!_poolCollapsed) _rightWidth = drag.right;
             } else {
-              _rightWidth = (drag.right - delta).clamp(
-                145.0,
-                math.max(145.0, drag.maxRight),
-              );
-              _leftWidth = drag.left;
+              final width = drag.right - delta;
+              _poolCollapsed = width < 180;
+              if (!_poolCollapsed) {
+                _rightWidth = width.clamp(
+                  220.0,
+                  math.max(220.0, drag.maxRight),
+                );
+              }
+              if (!_resourcesCollapsed) _leftWidth = drag.left;
             }
           });
         },
@@ -317,6 +421,7 @@ extension _VoiceView on _VoiceReplacementState {
         onHorizontalDragCancel: () => _paneDrag = null,
         onDoubleTap: () {
           _update(() {
+            _resourcesCollapsed = _poolCollapsed = false;
             _leftWidth = 190;
             _rightWidth = 220;
           });
@@ -342,6 +447,7 @@ extension _VoiceView on _VoiceReplacementState {
     String title,
     Widget body, {
     Widget? trailing,
+    Widget? titleAction,
     String? hint,
   }) => Container(
     decoration: BoxDecoration(
@@ -356,7 +462,7 @@ extension _VoiceView on _VoiceReplacementState {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: SizedBox(
-            height: 22,
+            height: 32,
             child: LayoutBuilder(
               builder: (context, box) => Row(
                 children: [
@@ -378,7 +484,13 @@ extension _VoiceView on _VoiceReplacementState {
                             ),
                           ),
                         ),
-                        if (hint != null && box.maxWidth > 440) ...[
+                        if (titleAction != null) ...[
+                          const SizedBox(width: 10),
+                          titleAction,
+                        ],
+                        if (hint != null &&
+                            box.maxWidth > 600 &&
+                            !(titleAction != null && _selectingExport)) ...[
                           const SizedBox(width: 14),
                           Expanded(
                             flex: 5,

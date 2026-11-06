@@ -25,12 +25,29 @@ def serve(args, handler=None):
 
     input_stream, output_stream = sys.stdin, sys.stdout
     for line in input_stream:
-        request = json.loads(line)
+        request = {}
+        try:
+            request = json.loads(line)
+            if not isinstance(request, dict) or "id" not in request:
+                raise ValueError("Worker request must contain an id")
+            if request.get("action") in {"serve", None}:
+                raise ValueError("Invalid worker action")
+        except (ValueError, TypeError) as error:
+            output_stream.write(
+                json.dumps(
+                    {
+                        "id": request.get("id") if isinstance(request, dict) else None,
+                        "error": str(error),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+            output_stream.flush()
+            continue
         response = {"id": request["id"]}
         command = argparse.Namespace(**vars(args))
         action = request.get("action")
-        if action in {"serve", None}:
-            raise ValueError("Invalid worker action")
         for key in (
             "locale",
             "current_game",

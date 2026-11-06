@@ -1,3 +1,6 @@
+import 'package:fh_radio_studio/state/game_playlist_membership.dart';
+import 'package:fh_radio_studio/core/speech_generation.dart';
+import 'speech_generation_test.dart' show FakeSpeech;
 import 'dart:convert';
 import 'dart:io';
 
@@ -277,6 +280,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           studioProvider.overrideWith((ref) => controller),
         ],
@@ -349,6 +360,14 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            gamePlaylistMembershipProvider.overrideWith(
+              (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+            ),
+            speechGenerationProvider.overrideWith((ref, key) {
+              final session = FakeSpeech();
+              ref.onDispose(session.dispose);
+              return session;
+            }),
             sharedPreferencesProvider.overrideWithValue(prefs),
             studioProvider.overrideWith((ref) => controller),
           ],
@@ -416,6 +435,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           studioProvider.overrideWith((ref) => controller),
         ],
@@ -489,6 +516,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           studioProvider.overrideWith((ref) => controller),
           sirenImportQueueProvider.overrideWith(
@@ -583,6 +618,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           studioProvider.overrideWith((ref) => controller),
           effectivePlaylistPlanProvider.overrideWithValue(
@@ -671,6 +714,14 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            gamePlaylistMembershipProvider.overrideWith(
+              (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+            ),
+            speechGenerationProvider.overrideWith((ref, key) {
+              final session = FakeSpeech();
+              ref.onDispose(session.dispose);
+              return session;
+            }),
             sharedPreferencesProvider.overrideWithValue(prefs),
             studioProvider.overrideWith((ref) => controller),
             realPoolTracksProvider.overrideWithValue(const [done, half, zero]),
@@ -697,7 +748,8 @@ void main() {
       final zeroTop = tester.getTopLeft(find.text('Zero Config')).dy;
       final halfTop = tester.getTopLeft(find.text('Half Config')).dy;
       final doneTop = tester.getTopLeft(find.text('Done Config')).dy;
-      expect(doneTop, lessThan(halfTop));
+      expect(halfTop, lessThan(doneTop));
+      expect(zeroTop, lessThan(doneTop));
       expect(halfTop, lessThan(zeroTop));
 
       await tester.tap(find.text('已完成 · 1'));
@@ -771,6 +823,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           studioProvider.overrideWith((ref) => controller),
           realPoolTracksProvider.overrideWithValue(const [
@@ -850,6 +910,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           studioProvider.overrideWith((ref) => controller),
           realPoolTracksProvider.overrideWithValue(const []),
@@ -946,6 +1014,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           studioProvider.overrideWith((ref) => controller),
         ],
@@ -1023,7 +1099,17 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        overrides: [
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
+          sharedPreferencesProvider.overrideWithValue(prefs),
+        ],
         child: MaterialApp(
           theme: buildAppTheme(
             brightness: Brightness.light,
@@ -1110,6 +1196,14 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            gamePlaylistMembershipProvider.overrideWith(
+              (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+            ),
+            speechGenerationProvider.overrideWith((ref, key) {
+              final session = FakeSpeech();
+              ref.onDispose(session.dispose);
+              return session;
+            }),
             sharedPreferencesProvider.overrideWithValue(prefs),
             playlistCatalogForViewProvider(
               PlaylistCatalogView.package,
@@ -1152,7 +1246,7 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('split-playlist-setting')));
       await tester.pumpAndSettle();
-      expect(find.text('请先开启电台扩容'), findsOneWidget);
+      expect(find.text('开启电台扩容后使用分场景编辑'), findsOneWidget);
       await tester.tap(find.text('知道了'));
       await tester.pumpAndSettle();
 
@@ -1252,6 +1346,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           playlistCatalogProvider.overrideWithValue(catalog),
           realPoolTracksProvider.overrideWithValue(const [track]),
@@ -1361,6 +1463,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           playlistCatalogProvider.overrideWithValue(catalog),
           realPoolTracksProvider.overrideWithValue(const [track]),
@@ -1459,6 +1569,14 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            gamePlaylistMembershipProvider.overrideWith(
+              (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+            ),
+            speechGenerationProvider.overrideWith((ref, key) {
+              final session = FakeSpeech();
+              ref.onDispose(session.dispose);
+              return session;
+            }),
             sharedPreferencesProvider.overrideWithValue(prefs),
             playlistCatalogProvider.overrideWithValue(packageCatalog),
             baselinePlaylistCatalogProvider.overrideWithValue(baselineCatalog),
@@ -1551,6 +1669,14 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            gamePlaylistMembershipProvider.overrideWith(
+              (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+            ),
+            speechGenerationProvider.overrideWith((ref, key) {
+              final session = FakeSpeech();
+              ref.onDispose(session.dispose);
+              return session;
+            }),
             sharedPreferencesProvider.overrideWithValue(prefs),
             playlistCatalogProvider.overrideWithValue(packageCatalog),
             baselinePlaylistCatalogProvider.overrideWithValue(baselineCatalog),
@@ -1657,6 +1783,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           studioProvider.overrideWith((ref) => controller),
           playlistCatalogProvider.overrideWithValue(catalog),
@@ -1709,7 +1843,24 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        overrides: [
+          playlistCatalogProvider.overrideWithValue(
+            PlaylistCatalog.failed(
+              view: PlaylistCatalogView.package,
+              packageDir: null,
+              gameDir: gameDir,
+            ),
+          ),
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
+          sharedPreferencesProvider.overrideWithValue(prefs),
+        ],
         child: MaterialApp(
           theme: buildAppTheme(
             brightness: Brightness.light,
@@ -1814,6 +1965,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           studioProvider.overrideWith((ref) => controller),
         ],
@@ -1931,6 +2090,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           studioProvider.overrideWith((ref) => controller),
         ],
@@ -2072,6 +2239,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          gamePlaylistMembershipProvider.overrideWith(
+            (ref) async => const GamePlaylistMembership(PlaylistPlan.empty()),
+          ),
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           studioProvider.overrideWith((ref) => controller),
         ],

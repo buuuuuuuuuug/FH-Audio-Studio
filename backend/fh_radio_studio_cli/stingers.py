@@ -295,7 +295,14 @@ def import_audio(project: Path, paths: list[str]) -> dict:
         imported.append(sha)
         if any(a["id"] == sha for a in plan["assets"]):
             continue
-        target = project / "sources" / "stingers" / (sha + source.suffix.lower())
+        from .voices import safe_audio_name
+
+        target = (
+            project
+            / "sources"
+            / "stingers"
+            / (safe_audio_name(source.stem) + "_" + sha[:8] + source.suffix.lower())
+        )
         _copy_snapshot(source, target)
         plan["assets"].append(
             {
@@ -812,7 +819,13 @@ def freeze_for_build(args):
     if not value:
         return None
     project = Path(value).expanduser().resolve()
-    plan = load_plan(project)
+    from .game_update import synchronize_stingers
+
+    plan = (
+        synchronize_stingers(project, game_root_for(Path(args.game_dir)))
+        if getattr(args, "game_dir", None)
+        else load_plan(project)
+    )
     if not plan["baselines"]:
         return None
     gain = float(getattr(args, "stinger_gain_db", 0))
@@ -820,6 +833,8 @@ def freeze_for_build(args):
         raise CliError("台呼统一增益需在 -6 至 +6 dB")
     known_slots, labels = set(), {}
     for baseline in plan["baselines"].values():
+        if baseline.get("update_error"):
+            raise CliError(baseline["update_error"])
         for field, checksum in (("bank_ref", "sha256"), ("xml_ref", "xml_sha256")):
             if digest(local_file(project, baseline[field])) != baseline[checksum]:
                 raise CliError("台呼原始快照校验失败，已保留旧准备包")

@@ -193,321 +193,306 @@ extension _VoiceTable on _VoiceReplacementState {
     }
   }
 
-  Widget _workbenchToolbar(bool decoded) => LayoutBuilder(
-    builder: (context, box) {
-      Widget history(String label, String icon, VoidCallback? callback) =>
-          RmButton(
-            label: label,
-            size: RmButtonSize.sm,
-            leading: RmIcon(icon, size: 12),
-            onPressed: callback,
-          );
-      final left = Wrap(
-        spacing: 6,
-        runSpacing: 6,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          if (!_selectingExport || box.maxWidth >= 1000) ...[
-            history(
-              '撤销',
-              'undo',
-              _undo.isEmpty || _locked ? null : () => _history(false),
-            ),
-            history(
-              '重做',
-              'redo',
-              _redo.isEmpty || _locked ? null : () => _history(true),
-            ),
-            history(
-              '恢复原音',
-              'history',
-              _locked || _replacements.isEmpty ? null : _restoreFile,
-            ),
-            if (!decoded && _entries.isNotEmpty)
-              RmButton(
-                label: '准备全部试听',
-                size: RmButtonSize.sm,
-                leading: const RmIcon('music', size: 12),
-                onPressed: _locked ? null : _warmCurrent,
-              ),
-          ],
-          RmButton(
-            key: const ValueKey('voice-export-text'),
-            label: _selectingExport ? '退出多选' : '多选导出',
-            size: RmButtonSize.sm,
-            leading: const RmIcon('export', size: 12),
-            onPressed: _locked || _entries.isEmpty
-                ? null
-                : _toggleEntrySelection,
-          ),
-          if (_selectingExport) ..._entrySelectionActions(_visibleEntries()),
-        ],
-      );
-      final files = box.maxWidth >= 820
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                RmButton(
-                  key: const ValueKey('voice-open-audio-folder'),
-                  label: '打开音频目录',
-                  size: RmButtonSize.sm,
-                  leading: const RmIcon('folder', size: 12),
-                  onPressed: _locked
-                      ? null
-                      : () => _openDirectory(
-                          'analysis/voices/original/${_bank['sha256']}',
-                        ),
-                ),
-                const SizedBox(width: 6),
-                RmButton(
-                  key: const ValueKey('voice-forget-audio'),
-                  label: '删除解析',
-                  size: RmButtonSize.sm,
-                  leading: const RmIcon('trash', size: 12),
-                  foregroundColor: context.rm.danger,
-                  onPressed: _locked ? null : _forgetFile,
-                ),
-              ],
-            )
-          : PopupMenuButton<String>(
-              tooltip: '',
-              color: context.rm.panel,
-              surfaceTintColor: Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(RmTokens.rSm),
-                side: BorderSide(color: context.rm.border),
-              ),
-              onSelected: (v) {
-                if (v == 'open') {
-                  unawaited(
-                    _openDirectory(
-                      'analysis/voices/original/${_bank['sha256']}',
-                    ),
-                  );
-                } else {
-                  unawaited(_forgetFile());
-                }
-              },
-              itemBuilder: (ctx) => [
-                PopupMenuItem(
-                  value: 'open',
-                  enabled: !_locked,
-                  child: _menuLabel('folder', '打开音频目录'),
-                ),
-                PopupMenuItem(
-                  value: 'forget',
-                  enabled: !_locked,
-                  child: _menuLabel('trash', '删除解析记录'),
-                ),
-              ],
-              child: IgnorePointer(
-                child: RmButton(
-                  label: '文件',
-                  size: RmButtonSize.sm,
-                  leading: const RmIcon('folder', size: 12),
-                  trailing: const RmIcon('chevron-down', size: 11),
-                  onPressed: () {},
-                ),
-              ),
-            );
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: left),
+  Widget _entrySelectionButton() => RmButton(
+    key: const ValueKey('voice-export-text'),
+    label: _selectingExport ? '退出多选' : '多选',
+    horizontalPadding: 10,
+    leading: const RmIcon('export', size: 12),
+    onPressed: _locked || _entries.isEmpty ? null : _toggleEntrySelection,
+  );
+
+  Widget _entrySelectionActions() => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: Row(
+      children: [
+        _entrySelectionButton(),
+        if (_selectingExport) ...[
           const SizedBox(width: 10),
-          files,
-        ],
-      );
-    },
-  );
-
-  List<Widget> _entrySelectionActions(List<Map<String, dynamic>> visible) {
-    final ids = visible.map((e) => e['index'] as int).toSet();
-    final all = ids.isNotEmpty && ids.every(_exportEntries.contains);
-    return [
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Text(
-          '已选 ${_exportEntries.length}',
-          style: RmText.sans(11, color: context.rm.fg3),
-        ),
-      ),
-      RmButton(
-        key: const ValueKey('voice-toggle-all-entries'),
-        label: all ? '取消全选' : '全选',
-        size: RmButtonSize.sm,
-        onPressed: _locked || ids.isEmpty
-            ? null
-            : () => _update(() {
-                if (all) {
-                  _exportEntries.removeAll(ids);
-                } else {
-                  _exportEntries.addAll(ids);
-                }
-              }),
-      ),
-      RmButton(
-        key: const ValueKey('voice-export-selected-text'),
-        label: '导出文本',
-        size: RmButtonSize.sm,
-        leading: const RmIcon('export', size: 12),
-        onPressed: _locked || _exportEntries.isEmpty ? null : _exportText,
-      ),
-      RmButton(
-        key: const ValueKey('voice-extract-assets'),
-        label: '加入素材池',
-        size: RmButtonSize.sm,
-        leading: const RmIcon('plus', size: 12),
-        variant: RmButtonVariant.primary,
-        onPressed: _locked || _exportEntries.isEmpty
-            ? null
-            : _extractOriginalAssets,
-      ),
-    ];
-  }
-
-  Widget _menuLabel(String icon, String label) => Row(
-    children: [
-      RmIcon(icon, size: 13),
-      const SizedBox(width: 8),
-      Text(label, style: RmText.sans(12, color: context.rm.fg)),
-    ],
-  );
-
-  Widget _workbench() {
-    final rm = context.rm, visible = _visibleEntries(), changes = _replacements;
-    final decoded = _catalogs['${_bank['id']}']?['decoded'] == true;
-    final fileDirty =
-        jsonEncode(stingerMap(_edits['${_bank['id']}'])) !=
-        jsonEncode(stingerMap(_saved['${_bank['id']}']));
-    return _panel(
-      '音频替换',
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            key: const ValueKey('voice-workbench-tools'),
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: RmTooltip(
-                        message: '${_pending?['relative_path'] ?? ''}',
-                        child: Text(
-                          '${_pending?['name'] ?? '请从左侧选择文件'}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: RmText.mono(
-                            11.5,
-                            color: rm.fg,
-                            weight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (_readyFile)
-                      RmChip(
-                        key: const ValueKey('voice-resource-status'),
-                        showDot: true,
-                        dense: true,
-                        label: changes.isEmpty && !fileDirty
-                            ? '0 条替换 · 已解析'
-                            : '${changes.length} 条替换 · ${jsonEncode(_edits['${_bank['id']}']) == jsonEncode(_saved['${_bank['id']}']) ? '已保存' : '未保存'}',
-                        leading: changes.isEmpty && !fileDirty
-                            ? null
-                            : const RmIcon('pencil', size: 10),
-                        variant: RmChipVariant.accent,
-                      ),
-                  ],
-                ),
-                if (_readyFile && !_unavailableResource) ...[
-                  const SizedBox(height: 10),
-                  _workbenchToolbar(decoded),
-                ],
-              ],
-            ),
-          ).tourAnchor(
-            _readyFile && !_unavailableResource ? 'tools' : 'unprepared-header',
+          Text(
+            '已选 ${_exportEntries.length}',
+            style: RmText.sans(11, color: context.rm.fg3),
           ),
-          Divider(height: 1, color: rm.border),
-          if (_readyFile && !_unavailableResource) ...[
-            Padding(
-              key: const ValueKey('voice-workbench-search'),
-              padding: const EdgeInsets.all(12),
+          const SizedBox(width: 8),
+          RmButton(
+            key: const ValueKey('voice-export-selected-text'),
+            label: '导出文本',
+            leading: const RmIcon('export', size: 12),
+            onPressed: _locked || _exportEntries.isEmpty ? null : _exportText,
+          ),
+        ],
+      ],
+    ),
+  );
+
+  Widget _workbenchToolbar(bool decoded) => LayoutBuilder(
+    builder: (context, box) => SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SizedBox(
+        width: math.max(500, box.maxWidth),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
               child: PlaylistSearchField(
                 key: const ValueKey('voice-entry-filter'),
                 controller: _entrySearch,
                 onChanged: (_) => _update(() {}),
                 hint: '搜索条目 / 文本 / 替换名称 / 分类',
               ),
-            ).tourAnchor('tools-end'),
-
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: rm.border),
-                    borderRadius: BorderRadius.circular(RmTokens.rSm),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: _comparisonTable(visible, changes),
-                ),
-              ),
             ),
-          ] else
-            Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+            const SizedBox(width: 8),
+            EditorHistoryButtons(
+              onUndo: _undo.isEmpty || _locked ? null : () => _history(false),
+              onRedo: _redo.isEmpty || _locked ? null : () => _history(true),
+            ),
+            const SizedBox(width: 8),
+            RmButton(
+              label: '清除替换',
+              leading: const RmIcon('history', size: 12),
+              onPressed: _locked || _replacements.isEmpty ? null : _restoreFile,
+            ),
+            const SizedBox(width: 8),
+            RmButton(
+              key: const ValueKey('voice-forget-audio'),
+              label: '删除解析',
+              leading: const RmIcon('trash', size: 12),
+              foregroundColor: context.rm.danger,
+              onPressed: _locked ? null : _forgetFile,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _workbench() {
+    final rm = context.rm, visible = _visibleEntries(), changes = _replacements;
+    final generation =
+        !ref.watch(editorOptionsProvider).speechEnabled ||
+            _generationEntries == null
+        ? null
+        : _generationEntries!.first['target'] == null
+        ? _generationEntries!
+        : [
+            for (final entry in _entries.where(
+              (e) => _selectingExport && _exportEntries.isNotEmpty
+                  ? _exportEntries.contains(e['index'])
+                  : e['index'] == _index,
+            ))
+              _speechEntry(entry),
+          ];
+    final activeGeneration =
+        generation
+            ?.where((e) => speechMap(e['target'])['index'] == _index)
+            .firstOrNull ??
+        generation?.firstOrNull;
+    final decoded = _catalogs['${_bank['id']}']?['decoded'] == true;
+    final fileDirty =
+        jsonEncode(stingerMap(_edits['${_bank['id']}'])) !=
+        jsonEncode(stingerMap(_saved['${_bank['id']}']));
+    return _panel(
+      '音频替换',
+      LayoutBuilder(
+        builder: (_, workBox) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              key: const ValueKey('voice-workbench-tools'),
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
                     children: [
-                      RmIcon(
-                        _unavailableResource ? 'info' : 'volume',
-                        size: 32,
-                        color: rm.fg4,
+                      Expanded(
+                        child: RmTooltip(
+                          message: '${_pending?['relative_path'] ?? ''}',
+                          child: Text(
+                            '${_pending?['name'] ?? '请从左侧选择文件'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: RmText.mono(
+                              11.5,
+                              color: rm.fg,
+                              weight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _unavailableResource
-                            ? _unavailableReason
-                            : _pending == null
-                            ? '选择资源文件，或添加自选文件。'
-                            : '备份并解析后，在此对照原音与替换音频。',
-                        textAlign: TextAlign.center,
-                        style: RmText.sans(12, color: rm.fg3, height: 1.6),
+                      const SizedBox(width: 8),
+                      if (_readyFile)
+                        RmChip(
+                          key: const ValueKey('voice-resource-status'),
+                          showDot: true,
+                          dense: true,
+                          label: changes.isEmpty && !fileDirty
+                              ? '0 条替换 · 已解析'
+                              : '${changes.length} 条替换 · ${jsonEncode(_edits['${_bank['id']}']) == jsonEncode(_saved['${_bank['id']}']) ? '已保存' : '未保存'}',
+                          leading: changes.isEmpty && !fileDirty
+                              ? null
+                              : const RmIcon('pencil', size: 10),
+                          variant: RmChipVariant.accent,
+                        ),
+                    ],
+                  ),
+                  if (_readyFile && !_unavailableResource) ...[
+                    const SizedBox(height: 10),
+                    _workbenchToolbar(decoded).tourAnchor('tools-end'),
+                  ],
+                ],
+              ),
+            ).tourAnchor(
+              _readyFile && !_unavailableResource
+                  ? 'tools'
+                  : 'unprepared-header',
+            ),
+            Divider(height: 1, color: rm.border),
+            if (_readyFile && !_unavailableResource) ...[
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (_, bodyBox) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (generation != null && generation.isNotEmpty)
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: math.max(
+                              0,
+                              bodyBox.maxHeight -
+                                  math.min(
+                                    180,
+                                    math.max(150, bodyBox.maxHeight * .28),
+                                  ),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Scrollbar(
+                              controller: _generationScroll,
+                              thumbVisibility: true,
+                              child: SingleChildScrollView(
+                                key: const ValueKey('voice-generation-scroll'),
+                                controller: _generationScroll,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                child: SpeechGenerationPanel(
+                                  featureTour: true,
+                                  key: ValueKey(
+                                    jsonEncode(
+                                      generation
+                                          .map(
+                                            (e) => [
+                                              e['name'],
+                                              speechMap(e['target'])['bank_id'],
+                                              speechMap(e['target'])['index'],
+                                            ],
+                                          )
+                                          .toList(),
+                                    ),
+                                  ),
+                                  session: _speechSession(),
+                                  targetSnapshot: _generationTargetSnapshot,
+                                  onUnapply: _unapplyGenerated,
+                                  entries: generation,
+                                  initialEntryIndex: math.max(
+                                    0,
+                                    generation.indexOf(activeGeneration!),
+                                  ),
+                                  onEntryChanged: (i) => _update(() {
+                                    final target = speechMap(
+                                      generation[i]['target'],
+                                    );
+                                    if (target['index'] is int) {
+                                      _index = target['index'] as int;
+                                    }
+                                  }),
+                                  onClose: () =>
+                                      _update(() => _generationEntries = null),
+                                  original: _entry == null
+                                      ? null
+                                      : () => _play('original'),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            12,
+                            generation?.isNotEmpty == true ? 0 : 10,
+                            12,
+                            12,
+                          ),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: rm.border),
+                              borderRadius: BorderRadius.circular(RmTokens.rSm),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: _comparisonTable(visible, changes),
+                          ),
+                        ),
                       ),
-                      if (_pending != null && !_unavailableResource) ...[
-                        const SizedBox(height: 14),
-                        RmButton(
-                          key: const ValueKey('voice-prepare'),
-                          label: '备份并解析',
-                          leading: const RmIcon('shield', size: 12),
-                          variant: RmButtonVariant.primary,
-                          onPressed: _locked ? null : _prepare,
-                        ).tourAnchor('prepare'),
-                      ],
                     ],
                   ),
                 ),
               ),
-            ),
-        ],
+            ] else
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        RmIcon(
+                          _unavailableResource ? 'info' : 'volume',
+                          size: 32,
+                          color: rm.fg4,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          _unavailableResource
+                              ? _unavailableReason
+                              : _pending == null
+                              ? '选择资源文件，或添加自选文件。'
+                              : '备份并解析后，在此对照原音与替换音频。',
+                          textAlign: TextAlign.center,
+                          style: RmText.sans(12, color: rm.fg3, height: 1.6),
+                        ),
+                        if (_pending != null && !_unavailableResource) ...[
+                          const SizedBox(height: 14),
+                          RmButton(
+                            key: const ValueKey('voice-prepare'),
+                            label: '备份并解析',
+                            leading: const RmIcon('shield', size: 12),
+                            variant: RmButtonVariant.primary,
+                            onPressed: _locked ? null : _prepare,
+                          ).tourAnchor('prepare'),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
       hint: _unavailableResource
           ? '此资源暂不可解析'
           : !_readyFile
           ? '选择资源后备份并解析'
           : _selectingExport
-          ? '勾选条目后导出文本或加入素材池'
+          ? '勾选条目后导出文本'
           : _bank['supported'] != true
           ? '只读 · ${_bank['reason']}'
           : '拖入素材替换 · 双击编辑 · Ctrl+左键复制文本',
+      titleAction: _readyFile && !_unavailableResource
+          ? Flexible(flex: 4, child: _entrySelectionActions())
+          : null,
       trailing: !_readyFile || _unavailableResource
           ? null
           : Text(
@@ -1073,6 +1058,7 @@ extension _VoiceTable on _VoiceReplacementState {
                                       select();
                                       unawaited(_edit());
                                     },
+                              key: ValueKey('voice-edit-$index'),
                             ),
                             _toolIcon(
                               'trash',

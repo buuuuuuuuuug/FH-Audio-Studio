@@ -126,7 +126,7 @@ void main() {
       await t.pumpAndSettle();
       await t.tap(find.text('导入时间点'));
       await t.pumpAndSettle();
-      expect(find.text('Esc 关闭'), findsOneWidget);
+      expect(find.text('Esc 关闭'), findsNothing);
       expect(
         t.widget<Dialog>(find.byType(Dialog)).shape,
         isA<RoundedRectangleBorder>(),
@@ -141,7 +141,7 @@ void main() {
       await t.tap(find.text('导出时间点'));
       await t.pumpAndSettle();
       expect(find.byType(TimingExportDialog), findsOneWidget);
-      expect(find.text('Esc 关闭'), findsOneWidget);
+      expect(find.text('Esc 关闭'), findsNothing);
       expect(find.textContaining('TL-A'), findsWidgets);
       await t.sendKeyEvent(LogicalKeyboardKey.escape);
       await t.pumpAndSettle();

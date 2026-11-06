@@ -287,7 +287,9 @@ def test_build_package_writes_loudness_manifest_and_baseline_envelope(mock_game,
     assert track["loudness"]["mode"] == "custom-set"
     assert "input_integrated_lufs" in track["loudness"]
     assert track["loudness"]["output_verified"] is False
-    assert Path(track["prepared_wav"]).exists()
+    from backend.fh_radio_studio_cli.project_refs import resolve_project_ref
+
+    assert resolve_project_ref(tmp_path, track["prepared_wav"]).exists()
     cache_payload = json.loads(metadata_cache.read_text(encoding="utf-8"))
     cached = cache_payload["tracks"][0]["loudness_analysis"]
     assert cached["status"] == "ok"

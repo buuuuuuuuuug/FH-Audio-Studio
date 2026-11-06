@@ -3,6 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
 
+// Before a page is destroyed, give its modal the same close decision as X,
+// Escape and the backdrop. No widget is retained after an approved navigation.
+final _editorNavigationGuards = <Object, Future<bool> Function()>{};
+Future<bool> confirmAudioEditorNavigation() => _confirmEditorNavigation();
+Future<bool> _confirmEditorNavigation() async {
+  for (final guard in _editorNavigationGuards.values.toList().reversed) {
+    if (!await guard()) return false;
+  }
+  return true;
+}
+
 /// Like the song's manual-refine overlay, an audio editor belongs to its page.
 /// Its local navigator (including any confirmation dialogs) is destroyed when
 /// that page is removed. A shell navigation must never leave a pageless editor
@@ -51,7 +62,16 @@ class _AudioEditorHostState extends State<AudioEditorHost> {
   Widget build(BuildContext context) => Stack(
     fit: StackFit.expand,
     children: [
-      ExcludeFocus(excluding: _result != null, child: widget.child),
+      ExcludeFocus(
+        excluding: _result != null,
+        child: Listener(
+          // Blank parts of this transparent page still belong to the page.
+          // Otherwise taps reach ModalRoute's non-dismissible barrier, which
+          // plays SystemSoundType.alert on Windows.
+          behavior: HitTestBehavior.opaque,
+          child: widget.child,
+        ),
+      ),
       if (_result case final result?)
         Positioned.fill(
           child: HeroControllerScope.none(
@@ -88,18 +108,25 @@ Future<T?> showAudioEditorDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool backdrop = true,
-}) {
-  final host = context.findAncestorStateOfType<_AudioEditorHostState>();
-  if (host != null) return host.show<T>(builder, backdrop);
-  return showGeneralDialog<T>(
-    context: context,
-    useRootNavigator: false,
-    barrierDismissible: false,
-    barrierColor: Colors.transparent,
-    transitionDuration: const Duration(milliseconds: 140),
-    pageBuilder: (dialogContext, _, _) =>
-        _editorViewport(dialogContext, builder, backdrop),
-  );
+  Future<bool> Function()? beforeLeave,
+}) async {
+  final guardKey = Object();
+  if (beforeLeave != null) _editorNavigationGuards[guardKey] = beforeLeave;
+  try {
+    final host = context.findAncestorStateOfType<_AudioEditorHostState>();
+    if (host != null) return await host.show<T>(builder, backdrop);
+    return await showGeneralDialog<T>(
+      context: context,
+      useRootNavigator: false,
+      barrierDismissible: false,
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 140),
+      pageBuilder: (dialogContext, _, _) =>
+          _editorViewport(dialogContext, builder, backdrop),
+    );
+  } finally {
+    _editorNavigationGuards.remove(guardKey);
+  }
 }
 
 Widget _editorViewport(

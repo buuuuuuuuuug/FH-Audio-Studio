@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/fh_radio_studio_cli.dart';
 import 'core/windows_close_guard.dart';
+import 'screens/voices/speech_engine_dialog.dart';
 import 'state/app_state.dart';
 import 'state/studio_state.dart';
 import 'state/router.dart';
@@ -45,6 +46,11 @@ class _FhRadioStudioAppState extends ConsumerState<FhRadioStudioApp>
         !await ref.read(unsavedEditsProvider).confirm(context, exiting: true)) {
       return ui.AppExitResponse.cancel;
     }
+    if (context != null &&
+        context.mounted &&
+        !await confirmSpeechInstallationExit(context)) {
+      return ui.AppExitResponse.cancel;
+    }
     await FhRadioStudioCli.killActiveProcesses();
     return ui.AppExitResponse.exit;
   }
@@ -58,6 +64,11 @@ class _FhRadioStudioAppState extends ConsumerState<FhRadioStudioApp>
           !await ref
               .read(unsavedEditsProvider)
               .confirm(context, exiting: true)) {
+        return;
+      }
+      if (context != null &&
+          context.mounted &&
+          !await confirmSpeechInstallationExit(context)) {
         return;
       }
       await FhRadioStudioCli.killActiveProcesses();

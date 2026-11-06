@@ -131,12 +131,16 @@ extension _VoicePool on _VoiceReplacementState {
 
   Future<void> _removeMaterial(Map<String, dynamic> asset) async {
     if (_locked) return;
-    final id = '${asset['id']}';
+    await _removeMaterials({'${asset['id']}'});
+  }
+
+  Future<void> _removeMaterials(Set<String> ids) async {
+    if (_locked || ids.isEmpty) return;
     final used = <String>{};
     for (final data in [_edits, _saved]) {
       for (final bank in data.entries) {
         for (final e in stingerMap(bank.value).entries) {
-          if (stingerMap(e.value)['asset_id'] == id) {
+          if (ids.contains(stingerMap(e.value)['asset_id'])) {
             used.add('${bank.key}:${e.key}');
           }
         }
@@ -144,20 +148,23 @@ extension _VoicePool on _VoiceReplacementState {
     }
     if (used.isNotEmpty &&
         !await _confirm(
-          '移除素材？',
-          '“${asset['name']}”用于 ${used.length} 条替换，移除后会一并清除这些替换。原始素材文件保留。',
-          '移除素材',
+          '删除素材？',
+          '所选 ${ids.length} 条素材用于 ${used.length} 条替换，将删除工程内音频副本并清除这些替换。导入前的原文件保留。',
+          '删除素材',
         )) {
       return;
     }
     if (!mounted) return;
     await _guard(() async {
+      if (ids.any((id) => _playing == 'asset:$id')) {
+        _playGeneration++;
+        await _voicePlayer.stop();
+      }
       final result = await _call('remove-assets', {
-        'input': {
-          'assets': [id],
-        },
+        'input': {'assets': ids.toList()},
       });
-      if (_playing == 'asset:$id') {
+      _speech?.dismissPreviews(assetIds: ids);
+      if (ids.any((id) => _playing == 'asset:$id')) {
         _playGeneration++;
         await _voicePlayer.pause();
       }
@@ -165,17 +172,22 @@ extension _VoicePool on _VoiceReplacementState {
         _hydrate(stingerMap(result['plan']));
         for (final data in [_edits, _saved, ..._undo, ..._redo]) {
           for (final bank in data.values) {
-            (bank as Map).removeWhere((_, e) => e['asset_id'] == id);
+            (bank as Map).removeWhere((_, e) => ids.contains(e['asset_id']));
           }
         }
-        _selectedAssets.remove(id);
-        if (_selectedAsset == id) _selectedAsset = _selectedAssets.firstOrNull;
-        _assetWaves.remove(id);
-        _assetWaveData.remove(id);
-        _previewPaths.remove('asset:$id');
-        if (_playing == 'asset:$id') _playing = null;
+        _selectedAssets.removeAll(ids);
+        if (ids.contains(_selectedAsset)) {
+          _selectedAsset = _selectedAssets.firstOrNull;
+        }
+        for (final id in ids) {
+          _assetWaves.remove(id);
+          _assetWaveData.remove(id);
+          _previewPaths.remove('asset:$id');
+        }
+        _previewPaths.clear();
+        if (ids.any((id) => _playing == 'asset:$id')) _playing = null;
         _packageReady = false;
-        _notice = '素材已移除，原始文件保留。';
+        _notice = '素材及工程内音频副本已删除，外部原文件保留。';
       });
       await _persistDraft();
     });
@@ -214,7 +226,9 @@ extension _VoicePool on _VoiceReplacementState {
 
   Future<void> _moveSelectedAssets() async {
     if (_selectedAssets.isEmpty || _locked) return;
-    var folder = _assetCategory == '全部分类' ? '未分类' : _assetCategory;
+    var folder = _assetFolders.contains(_assetCategory)
+        ? _assetCategory
+        : '未分类';
     final target = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -251,9 +265,39 @@ extension _VoicePool on _VoiceReplacementState {
 
   Widget _pool() {
     final rm = context.rm, query = _assetSearch.text.toLowerCase();
+    final used = {
+      for (final bank in _edits.values)
+        for (final edit in (bank as Map).values) '${edit['asset_id']}',
+    };
     final visible = _assets
-        .where((a) => '${a['name']}'.toLowerCase().contains(query))
+        .where(
+          (a) =>
+              '${a['name']} ${a['category']}'.toLowerCase().contains(query) &&
+              (_assetStatus == 'all' ||
+                  (_assetStatus == 'used') == used.contains(a['id'])),
+        )
         .toList();
+    int position(Map<String, dynamic> a) =>
+        _assets.indexWhere((v) => v['id'] == a['id']);
+    visible.sort((a, b) {
+      final value = switch (_assetSort) {
+        'duration' => stingerNumber(
+          a['duration'],
+        ).compareTo(stingerNumber(b['duration'])),
+        'added' => position(a).compareTo(position(b)),
+        'name' => '${a['name']}'.toLowerCase().compareTo(
+          '${b['name']}'.toLowerCase(),
+        ),
+        _ =>
+          '${a['original_filename'] ?? p.basename('${a['source']}')}'
+              .toLowerCase()
+              .compareTo(
+                '${b['original_filename'] ?? p.basename('${b['source']}')}'
+                    .toLowerCase(),
+              ),
+      };
+      return _assetDescending ? -value : value;
+    });
     final byFolder = <String, List<Map<String, dynamic>>>{};
     for (final asset in visible) {
       byFolder.putIfAbsent('${asset['category']}', () => []).add(asset);
@@ -276,6 +320,11 @@ extension _VoicePool on _VoiceReplacementState {
             ? (unclassifiedA ? 1 : -1)
             : a.compareTo(b);
       });
+    _displayAssetOrder = [
+      for (final folder in ordered)
+        for (final asset in byFolder[folder] ?? <Map<String, dynamic>>[])
+          '${asset['id']}',
+    ];
     bool shown(String folder) {
       final parts = folder.split('/');
       for (var i = 1; i < parts.length; i++) {
@@ -313,7 +362,7 @@ extension _VoicePool on _VoiceReplacementState {
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: RmButton(
-                              size: RmButtonSize.sm,
+                              size: RmButtonSize.md,
                               label: box.maxWidth < 170 ? '导入' : '导入素材',
                               tooltip: '导入素材',
                               horizontalPadding: 6,
@@ -322,19 +371,73 @@ extension _VoicePool on _VoiceReplacementState {
                             ),
                           ),
                         ),
-                        _toolIcon(
-                          'folder-plus',
-                          '新建素材文件夹',
-                          _locked ? null : () => _folderCommand('create'),
+                        RmButton.icon(
                           key: const ValueKey('voice-new-folder'),
+                          icon: const RmIcon('folder-plus', size: 13),
+                          tooltip: '新建素材文件夹',
+                          onPressed: _locked
+                              ? null
+                              : () => _folderCommand('create'),
                         ),
-                        _toolIcon(
-                          'folder-open',
-                          '打开素材目录',
-                          () => _openDirectory('sources/voices'),
+                        const SizedBox(width: 6),
+                        RmButton.icon(
                           key: const ValueKey('voice-open-materials'),
+                          icon: const RmIcon('folder-open', size: 13),
+                          tooltip: '打开素材目录',
+                          onPressed: () => _openDirectory('sources/voices'),
                         ),
                       ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: RmSelect<String>(
+                      key: const ValueKey('voice-pool-sort'),
+                      menuWidth: 180,
+                      horizontalPadding: 5,
+                      value: _assetSort,
+                      items: const {
+                        'filename': '文件名称',
+                        'name': '素材名称',
+                        'duration': '音频时长',
+                        'added': '加入顺序',
+                      },
+                      onChanged: (v) => _update(() => _assetSort = v),
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  SizedBox(
+                    width: 58,
+                    child: RmButton(
+                      label: _assetDescending ? '倒序' : '正序',
+                      horizontalPadding: 4,
+                      leading: RmIcon(
+                        _assetDescending ? 'chevron-down' : 'chevron-up',
+                        size: 11,
+                      ),
+                      onPressed: () =>
+                          _update(() => _assetDescending = !_assetDescending),
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: RmSelect<String>(
+                      key: const ValueKey('voice-pool-status'),
+                      menuWidth: 160,
+                      horizontalPadding: 5,
+                      value: _assetStatus,
+                      items: const {
+                        'all': '全部状态',
+                        'used': '已使用',
+                        'unused': '未使用',
+                      },
+                      onChanged: (v) => _update(() => _assetStatus = v),
                     ),
                   ),
                 ],
@@ -365,7 +468,7 @@ extension _VoicePool on _VoiceReplacementState {
                   RmButton(
                     key: const ValueKey('voice-pool-multiselect'),
                     label: _selectingAssets ? '退出多选' : '多选',
-                    size: RmButtonSize.sm,
+                    size: RmButtonSize.md,
                     onPressed: _locked
                         ? null
                         : () {
@@ -389,7 +492,7 @@ extension _VoicePool on _VoiceReplacementState {
                       child: RmButton(
                         key: const ValueKey('voice-material-select-all'),
                         label: '全选',
-                        size: RmButtonSize.sm,
+                        size: RmButtonSize.md,
                         horizontalPadding: 6,
                         onPressed: _locked
                             ? null
@@ -406,7 +509,7 @@ extension _VoicePool on _VoiceReplacementState {
                       child: RmButton(
                         key: const ValueKey('voice-material-clear-selection'),
                         label: '清空',
-                        size: RmButtonSize.sm,
+                        size: RmButtonSize.md,
                         horizontalPadding: 6,
                         onPressed: _locked
                             ? null
@@ -422,12 +525,22 @@ extension _VoicePool on _VoiceReplacementState {
                         key: const ValueKey('voice-material-move'),
                         label: '移动',
                         tooltip: '移动到文件夹',
-                        size: RmButtonSize.sm,
+                        size: RmButtonSize.md,
                         horizontalPadding: 6,
                         onPressed: _locked || _selectedAssets.isEmpty
                             ? null
                             : _moveSelectedAssets,
                       ),
+                    ),
+                    const SizedBox(width: 6),
+                    RmButton.icon(
+                      key: const ValueKey('voice-material-delete-selected'),
+                      icon: const RmIcon('trash', size: 12),
+                      tooltip: '删除所选素材',
+                      foregroundColor: context.rm.danger,
+                      onPressed: _locked || _selectedAssets.isEmpty
+                          ? null
+                          : () => _removeMaterials({..._selectedAssets}),
                     ),
                   ],
                 ),
@@ -477,9 +590,20 @@ extension _VoicePool on _VoiceReplacementState {
             ),
           ],
         ),
-        trailing: Text(
-          '${_assets.length}',
-          style: RmText.mono(10, color: rm.fg3),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                '${_assets.length}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: RmText.mono(10, color: rm.fg3),
+              ),
+            ),
+            const SizedBox(width: 4),
+            _paneToggle('pool'),
+          ],
         ),
       ),
     );
@@ -717,7 +841,10 @@ extension _VoicePool on _VoiceReplacementState {
         cards: [
           for (final item
               in (selected && _selectedAssets.length > 1
-                  ? _assets.where((a) => _selectedAssets.contains(a['id']))
+                  ? [
+                      for (final id in _orderedSelectedAssets)
+                        _assets.firstWhere((a) => a['id'] == id),
+                    ]
                   : [asset]))
             _materialCard(item, visible, dragging: true),
         ],

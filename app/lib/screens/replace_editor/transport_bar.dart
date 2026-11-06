@@ -109,10 +109,6 @@ class TransportBar extends StatelessWidget {
                 aiPending ? 'BPM --' : 'BPM ${ai.bpm.toStringAsFixed(1)}',
                 style: RmText.mono(11, color: rm.fg3),
               ),
-            if (!compact && c.maxWidth >= 480) ...[
-              const SizedBox(width: 14),
-              _kbd(context, 'Space'),
-            ],
             if (trailing != null) ...[const SizedBox(width: 12), trailing!],
           ];
           return Row(
@@ -140,19 +136,6 @@ class TransportBar extends StatelessWidget {
       ),
       playing: state.playing,
       onPressed: onTogglePlay,
-    );
-  }
-
-  Widget _kbd(BuildContext context, String label) {
-    final rm = context.rm;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
-        color: rm.raised,
-        border: Border.all(color: rm.border),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(label, style: RmText.mono(10.5, color: rm.fg2)),
     );
   }
 }

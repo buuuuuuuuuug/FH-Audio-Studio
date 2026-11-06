@@ -67,7 +67,9 @@ class LoopCandidate {
     required this.score,
     required this.bars,
     required this.why,
+    this.noteDifference,
   });
+  final double? noteDifference;
   final double start;
   final double end;
   final double score;
@@ -82,6 +84,7 @@ class LoopCandidate {
     String? why,
   }) {
     return LoopCandidate(
+      noteDifference: noteDifference,
       start: start ?? this.start,
       end: end ?? this.end,
       score: score ?? this.score,

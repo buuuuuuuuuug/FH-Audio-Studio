@@ -251,6 +251,15 @@ class FhRadioStudioCli {
   }
 
   /// Long-lived local sessions use the same uv invocation and process tracking.
+  static Future<void> stopWorker(Process process) async {
+    try {
+      await process.stdin.close();
+      await process.exitCode.timeout(const Duration(seconds: 5));
+    } on Object {
+      await _killProcessTree(process.pid);
+    }
+  }
+
   Future<Process> startBaseWorker(List<String> args) async {
     final invocation = uvRuntime.baseCliRunInvocation(args);
     final process = await Process.start(

@@ -151,7 +151,7 @@ def test_folder_tree_moves_and_renames_without_moving_source_files(resource):
     assert result["plan"]["assets"][0]["source"] == "immutable.wav"
 
 
-def test_folder_delete_can_remove_children_and_references_without_deleting_originals(resource):
+def test_folder_delete_removes_owned_copies_and_references(resource):
     project, game, source = resource
     prepared = prepare(project, game, source)
     plan = load_plan(project)
@@ -174,7 +174,7 @@ def test_folder_delete_can_remove_children_and_references_without_deleting_origi
     assert [a["id"] for a in result["assets"]] == ["b"]
     assert set(result["banks"][prepared["bank"]["id"]]["replacements"]) == {"1"}
     assert result["folders"] == ["其他"]
-    assert original.read_bytes() == b"retained source"
+    assert not original.exists()
 
 
 def test_separate_voice_restore_package_excludes_song_and_stinger_files(resource):

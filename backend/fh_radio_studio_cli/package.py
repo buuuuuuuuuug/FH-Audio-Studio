@@ -54,6 +54,7 @@ from .game import (
     steam_game_version,
 )
 from .language import normalize_text_language, string_tables_dir_for
+from .language_policy import is_language_support_file
 from .loudness import (
     DEFAULT_CUSTOM_LOUDNESS_OFFSET_LU,
     LOUDNESS_ALGORITHM_VERSION,
@@ -374,6 +375,12 @@ def _metadata_cache_path_for_args(args: argparse.Namespace) -> Optional[Path]:
 
 
 def _project_dir_for_args(args: argparse.Namespace) -> Optional[Path]:
+    # The package location owns persisted references; caches may be external.
+    out_dir = getattr(args, "out_dir", None)
+    if out_dir:
+        candidate = Path(str(out_dir)).expanduser()
+        if candidate.parent.name == "packages":
+            return candidate.parent.parent.resolve()
     metadata_cache = _metadata_cache_path_for_args(args)
     if metadata_cache is not None and metadata_cache.name == "track_metadata.json":
         return metadata_cache.expanduser().parent.parent.resolve()
@@ -382,11 +389,6 @@ def _project_dir_for_args(args: argparse.Namespace) -> Optional[Path]:
         manifest_path = Path(str(timing_manifest)).expanduser()
         if manifest_path.parent.name.lower() == "analysis":
             return manifest_path.parent.parent.resolve()
-    out_dir = getattr(args, "out_dir", None)
-    if out_dir:
-        candidate = Path(str(out_dir)).expanduser()
-        if candidate.parent.name == "packages":
-            return candidate.parent.parent.resolve()
     return None
 
 
@@ -537,21 +539,6 @@ def collect_package_deploy_files(
                     "install_relative_path": str(Path("media") / "audio" / rel).replace("\\", "/"),
                 }
             )
-    string_dir = package_root / "media" / "Stripped" / "StringTables"
-    if string_dir.is_dir():
-        for table in sorted(string_dir.glob("*.zip")):
-            files.append(
-                {
-                    "kind": "string_table",
-                    "source": table,
-                    "relative_path": str(
-                        Path("media") / "Stripped" / "StringTables" / table.name
-                    ).replace("\\", "/"),
-                    "install_relative_path": str(
-                        Path("media") / "Stripped" / "StringTables" / table.name
-                    ).replace("\\", "/"),
-                }
-            )
     if not files and require_files:
         manifest_path = package_root / "fh_radio_studio_package_manifest.json"
         manifest = load_manifest(manifest_path) if manifest_path.is_file() else {}
@@ -657,6 +644,8 @@ def complete_package_from_baseline(
         if not isinstance(item, dict):
             continue
         install_rel = _baseline_install_relative_path(item)
+        if is_language_support_file(install_rel):
+            continue
         rel = str(item.get("relative_path") or "").replace("\\", "/").strip("/")
         if is_baseline_derived_index_path(install_rel) or is_baseline_derived_index_path(rel):
             continue
@@ -713,7 +702,10 @@ def apply_baseline_completion(
     if getattr(args, "_stinger_snapshot", None) is not None:
         scoped_radios = {
             int(unit["radio"])
-            for unit in package_manifest.get("radios", [])
+            for unit in [
+                *package_manifest.get("radios", []),
+                *package_manifest.get("restored_radios", []),
+            ]
             if unit.get("radio") is not None
         }
     completion = complete_package_from_baseline(
@@ -2220,62 +2212,17 @@ def preflight_build_package_from_plan(
                     )
 
 
-def package_language_settings(
-    args: argparse.Namespace, game_dir: Path, package_string_dir: Path
-) -> Optional[Dict[str, object]]:
+def package_language_settings(args, game_dir, package_string_dir):
+    # The two selections choose tool text/audio resources, not game settings.
     validate_language_settings(args, game_dir)
-    if not args.source and not args.target:
-        return None
-    source_lang = normalize_text_language(args.source)
-    target_lang = normalize_text_language(args.target)
-    source_string_dir = (
-        Path(args.source_string_tables_dir).expanduser()
-        if args.source_string_tables_dir
-        else string_tables_dir_for(game_dir)
-    )
-    source_table = source_string_dir / f"{source_lang}.zip"
-    target_table = source_string_dir / f"{target_lang}.zip"
-    package_string_dir.mkdir(parents=True, exist_ok=True)
-    packaged_target = package_string_dir / f"{target_lang}.zip"
-    shutil.copy2(source_table, packaged_target)
-    print(f"Packaged language: {source_lang} display -> {target_lang} voice")
-    return {
-        "source_lang": source_lang,
-        "target_lang": target_lang,
-        "source_string_tables_dir": _project_path_for_manifest(args, source_string_dir),
-        "source_table": _project_path_for_manifest(args, source_table),
-        "target_table": _project_path_for_manifest(args, target_table),
-        "packaged_table": _project_path_for_manifest(args, packaged_target),
-        "preferred_lang": target_lang,
-        "source_md5": md5_file(source_table),
-        "target_original_md5": md5_file(target_table),
-        "package_md5": md5_file(packaged_target),
-    }
+    return None
 
 
-def validate_language_settings(args: argparse.Namespace, game_dir: Path) -> None:
-    if not args.source and not args.target:
-        return
-    if not args.source or not args.target:
-        die("Pass both --source and --target when packaging language settings.")
-    if not args.source_string_tables_dir:
-        die(
-            "Packaging language settings requires trusted baseline string tables. "
-            "Pass --source-string-tables-dir from the baseline directory."
-        )
-    source_lang = normalize_text_language(args.source)
-    target_lang = normalize_text_language(args.target)
-    source_string_dir = (
-        Path(args.source_string_tables_dir).expanduser()
-        if args.source_string_tables_dir
-        else string_tables_dir_for(game_dir)
-    )
-    source_table = source_string_dir / f"{source_lang}.zip"
-    target_table = source_string_dir / f"{target_lang}.zip"
-    if not source_table.exists():
-        die(f"Source language table not found: {source_table}")
-    if not target_table.exists():
-        die(f"Target language table not found: {target_table}")
+def validate_language_settings(args, game_dir):
+    if args.source:
+        normalize_text_language(args.source)
+    if args.target:
+        normalize_text_language(args.target)
 
 
 def cmd_build_current_radio_package(
@@ -2313,10 +2260,9 @@ def cmd_build_current_radio_package(
 
     with progress.stage("package_language"):
         language_manifest = package_language_settings(args, game_dir, package_string_dir)
-        if language_manifest is None:
+        if not args.source and not args.target:
             die(
-                "No music files or playlist assignments were provided. Assign at least one track, "
-                "or pass --source and --target to build a baseline-radio package."
+                "No music files or playlist assignments were provided. Assign at least one track before building."
             )
 
     with progress.stage("copy_baseline_radio", summary=target_bank.name):
@@ -2391,15 +2337,14 @@ def cmd_build_current_radio_package(
             "=" * 35,
             f"Radio  : R{args.radio} {station.get('Name')}",
             f"Bank   : {target_bank.name}",
-            f"Display: {language_manifest['source_lang']}",
-            f"Voice  : {language_manifest['target_lang']}",
+            f"Tool display selection: {args.source}",
+            f"Tool voice selection: {args.target}",
             "",
             "RadioInfo and the selected bank are copied from the trusted baseline unchanged.",
-            "Deploy also writes UserPreferredLang when language settings are present.",
+            "Game language files and UserPreferredLang are not modified.",
             "",
             "Package files:",
             f"  {package_audio}",
-            f"  {package_string_dir}",
             f"  {manifest_path}",
         ]
         write_text(package_root / "INSTALL_README.txt", "\n".join(instructions) + "\n")
@@ -3097,6 +3042,7 @@ def cmd_build_package(args: argparse.Namespace) -> int:
         die("Build quality must be between 1 and 100")
     progress = _PackageProgressReporter(bool(getattr(args, "progress_jsonl", False)))
     game_dir = resolve_game_dir(args.game_dir)
+    args.game_dir = str(game_dir)
     if not getattr(args, "baseline_manifest", None):
         die(
             "A trusted baseline manifest is required to build a package. "
@@ -3108,6 +3054,8 @@ def cmd_build_package(args: argparse.Namespace) -> int:
     audio_dir = Path(args.source_audio_dir).expanduser() if args.source_audio_dir else None
     if audio_dir is None:
         audio_dir = _baseline_audio_dir_from_manifest(str(baseline_manifest))
+    if audio_dir is not None:
+        args.source_audio_dir = str(audio_dir)
     if audio_dir is None:
         die(
             "Trusted baseline audio directory not found. Pass --source-audio-dir "
@@ -3300,41 +3248,7 @@ def cmd_build_package(args: argparse.Namespace) -> int:
         "radios": [_package_unit_for_manifest(radio_package)],
     }
 
-    language_manifest: Optional[Dict[str, object]] = None
-    if args.source or args.target:
-        with progress.stage("package_language"):
-            if not args.source or not args.target:
-                die("Pass both --source and --target when packaging language settings.")
-            source_lang = normalize_text_language(args.source)
-            target_lang = normalize_text_language(args.target)
-            source_string_dir = (
-                Path(args.source_string_tables_dir).expanduser()
-                if args.source_string_tables_dir
-                else string_tables_dir_for(game_dir)
-            )
-            source_table = source_string_dir / f"{source_lang}.zip"
-            target_table = source_string_dir / f"{target_lang}.zip"
-            if not source_table.exists():
-                die(f"Source language table not found: {source_table}")
-            if not target_table.exists():
-                die(f"Target language table not found: {target_table}")
-            package_string_dir.mkdir(parents=True, exist_ok=True)
-            packaged_target = package_string_dir / f"{target_lang}.zip"
-            shutil.copy2(source_table, packaged_target)
-            language_manifest = {
-                "source_lang": source_lang,
-                "target_lang": target_lang,
-                "source_string_tables_dir": _project_path_for_manifest(args, source_string_dir),
-                "source_table": _project_path_for_manifest(args, source_table),
-                "target_table": _project_path_for_manifest(args, target_table),
-                "packaged_table": _project_path_for_manifest(args, packaged_target),
-                "preferred_lang": target_lang,
-                "source_md5": md5_file(source_table),
-                "target_original_md5": md5_file(target_table),
-                "package_md5": md5_file(packaged_target),
-            }
-            package_manifest["language"] = language_manifest
-            print(f"Packaged language: {source_lang} display -> {target_lang} voice")
+    language_manifest = package_language_settings(args, game_dir, package_string_dir)
 
     totals = {
         "samples_patched": 0,

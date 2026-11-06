@@ -83,6 +83,10 @@ List<LoopCandidate> seamlessCandidatesFromPayload(Map<String, dynamic> data) {
         b > duration) {
       continue;
     }
+    final evidence = item['evidence'];
+    final note = evidence is Map
+        ? evidence['note_difference']
+        : item['note_difference'];
     loops.add(
       LoopCandidate(
         start: a,
@@ -90,6 +94,7 @@ List<LoopCandidate> seamlessCandidatesFromPayload(Map<String, dynamic> data) {
         score: score.toDouble().clamp(0, 1),
         bars: 0,
         why: '${item['why']}',
+        noteDifference: note is num && note.isFinite ? note.toDouble() : null,
       ),
     );
   }

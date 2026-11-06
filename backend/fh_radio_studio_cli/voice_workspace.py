@@ -8,6 +8,7 @@ import io
 import json
 import shutil
 import tempfile
+import uuid
 from pathlib import Path
 
 from .common import CliError, md5_file
@@ -385,6 +386,7 @@ def folders(project, data):
     from .voices import load_plan, plan_path
 
     plan = load_plan(project)
+    removed_assets = []
     action = data.get("action", "create")
     name = folder_name(data.get("name"))
     choices = set(plan.get("folders", [])) | {a["category"] for a in plan["assets"]}
@@ -415,8 +417,7 @@ def folders(project, data):
             if a["category"] == name or a["category"].startswith(name + "/")
         }
         if data.get("delete_assets", False):
-            # Remove membership and references atomically. Imported immutable
-            # source files stay available for recovery and cached packages.
+            removed_assets = [a for a in plan["assets"] if a["id"] in affected]
             plan["assets"] = [a for a in plan["assets"] if a["id"] not in affected]
             for bank in plan["banks"].values():
                 bank["replacements"] = {
@@ -432,12 +433,62 @@ def folders(project, data):
     else:
         raise CliError("未知文件夹操作。")
     plan["folders"] = sorted(choices)
-    _write(plan_path(project), plan)
+    _commit_asset_removal(project, plan, removed_assets)
     return {"plan": plan}
 
 
+def _commit_asset_removal(project, plan, assets):
+    """Delete only owned pool copies, committing metadata after files can move.
+
+    External originals and files referenced by another remaining asset are
+    outside this operation. A failed staging/write restores the owned copies.
+    """
+    from .project_refs import resolve_project_ref
+    from .voices import plan_path
+
+    owned = (project / "sources/voices").resolve()
+    if not owned.is_relative_to(project.resolve()):
+        raise CliError("素材目录指向工程外，未删除任何文件。")
+
+    def source_path(asset):
+        reference = asset.get("source")
+        if not isinstance(reference, str) or not reference:
+            return None
+        path = (
+            resolve_project_ref(project, reference)
+            if reference.startswith("fh-project:/")
+            else Path(reference)
+        )
+        if not path.is_absolute():
+            path = project / path
+        # Never follow a pool symlink to an external original.
+        if path.is_symlink() or not path.resolve().is_relative_to(owned):
+            return None
+        return path
+
+    retained = {p.resolve() for a in plan["assets"] if (p := source_path(a)) is not None}
+    paths = {
+        p
+        for a in assets
+        if (p := source_path(a)) is not None and p.resolve() not in retained and p.is_file()
+    }
+    staged = []
+    try:
+        for path in paths:
+            temporary = path.with_name(f".{path.name}.delete-{uuid.uuid4().hex}")
+            path.rename(temporary)
+            staged.append((path, temporary))
+        _write(plan_path(project), plan)
+    except (OSError, CliError) as error:
+        for path, temporary in reversed(staged):
+            temporary.replace(path)
+        raise CliError("无法删除素材，工程记录已保留；请停止占用该文件的程序后重试。") from error
+    for _, temporary in staged:
+        temporary.unlink(missing_ok=True)
+
+
 def remove_assets(project, data):
-    """Remove pool membership and saved references together; keep source snapshots."""
+    """Remove records, their replacements and owned pool copies together."""
     from .voices import load_plan, plan_path
 
     plan = load_plan(project)
@@ -452,8 +503,9 @@ def remove_assets(project, data):
         previous = bank["replacements"]
         bank["replacements"] = {i: e for i, e in previous.items() if e["asset_id"] not in ids}
         removed_replacements += len(previous) - len(bank["replacements"])
+    removed = [a for a in plan["assets"] if a["id"] in ids]
     plan["assets"] = [a for a in plan["assets"] if a["id"] not in ids]
-    _write(plan_path(project), plan)
+    _commit_asset_removal(project, plan, removed)
     return {"plan": plan, "removed": len(ids), "removed_replacements": removed_replacements}
 
 
@@ -539,6 +591,7 @@ def build(args, project, game):
         }
         _write(package / "fh_radio_studio_package_manifest.json", manifest)
         build_args = argparse.Namespace(**vars(args))
+        build_args.game_dir = str(game)
         build_args.out_dir = str(stage)
         build_args._voice_snapshot = snapshot
         compose_package(build_args)

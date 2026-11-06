@@ -98,7 +98,7 @@ void main() {
     expect(find.text('scan · 等待确认'), findsOneWidget);
     expect(find.text('确认这是可用的'), findsOneWidget);
     expect(find.text('查看新文件流程'), findsNothing);
-    expect(find.text('准备包会写入 EN'), findsOneWidget);
+    expect(find.text('准备包会写入 EN'), findsNothing);
     expect(find.textContaining('auto-refresh'), findsNothing);
     expect(find.textContaining('自动刷新'), findsNothing);
     expect(find.textContaining('30s'), findsNothing);
@@ -184,7 +184,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('force backup clears playlist draft after baseline overwrite', (
+  testWidgets('force backup retains playlist draft after baseline overwrite', (
     tester,
   ) async {
     GoogleFonts.config.allowRuntimeFetching = false;
@@ -281,13 +281,13 @@ void main() {
 
     await tester.tap(find.text('我确认 Forza Horizon 6 没有运行'));
     await tester.tap(find.text('我理解当前原始备份会被覆盖'));
-    await tester.tap(find.text('我理解准备包和播放列表草稿会被清空'));
+    await tester.tap(find.text('我理解新备份应来自更新后的官方游戏文件，现有制作与准备包将保留'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(RmButton, '强制备份').last);
     await tester.pumpAndSettle();
 
     expect(controller.rebuildBaselineCount, 1);
-    expect(planFile.existsSync(), isFalse);
+    expect(planFile.existsSync(), isTrue);
     expect(tester.takeException(), isNull);
   });
 
@@ -1106,7 +1106,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.text('EN 槽尚未同步 CHS 显示'), findsWidgets);
-      expect(find.text('槽未同步'), findsOneWidget);
+      expect(find.text('槽未同步'), findsNothing);
       expect(find.text('语言对齐'), findsNothing);
       expect(tester.takeException(), isNull);
     },
@@ -1513,7 +1513,6 @@ class _DashboardTestController extends StudioController {
   @override
   Future<bool> rebuildBaselineFromCurrentGame() async {
     rebuildBaselineCount += 1;
-    PlaylistPlanStore.delete(state.projectDir);
     return true;
   }
 }

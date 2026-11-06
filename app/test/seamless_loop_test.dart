@@ -26,6 +26,7 @@ const suggested = LoopCandidate(
   score: .97,
   bars: 0,
   why: 'SeamlessLoopMusic · 衔接匹配',
+  noteDifference: .125,
 );
 const markers = <String, double>{
   'TrackDrop': 10,
@@ -95,6 +96,7 @@ Future<(ProviderContainer, String)> setup({
                   'end': suggested.end,
                   'score': .97,
                   'why': suggested.why,
+                  'evidence': {'note_difference': suggested.noteDifference},
                 },
               ],
               'pl': [
@@ -103,6 +105,7 @@ Future<(ProviderContainer, String)> setup({
                   'end': suggested.end,
                   'score': .97,
                   'why': suggested.why,
+                  'evidence': {'note_difference': suggested.noteDifference},
                 },
               ],
               'td': [
@@ -167,8 +170,19 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       final (c, id) = (await tester.runAsync(() => setup()))!;
+      final subscription = c.listen(replaceEditorProvider(id), (_, _) {});
+      addTearDown(subscription.close);
       await tester.runAsync(
         () => c.read(replaceEditorProvider(id).notifier).analyze(),
+      );
+      expect(
+        c
+            .read(replaceEditorProvider(id))
+            .ai
+            .tl
+            .any((v) => v.noteDifference == .125),
+        isTrue,
+        reason: 'native metric must reach editor state',
       );
       await tester.pumpWidget(
         UncontrolledProviderScope(
@@ -203,6 +217,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 260));
       expect(find.text('套用循环建议'), findsOneWidget);
+      expect(find.text('音高偏差 0.125'), findsWidgets);
       expect(find.text('套用 AI 建议'), findsNothing);
       expect(
         find.byKey(const ValueKey('manual-refine-ai-apply-1')),

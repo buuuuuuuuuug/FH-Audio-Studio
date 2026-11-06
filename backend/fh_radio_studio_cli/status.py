@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-from .baseline import (
-    baseline_version_id,
-    load_baseline_items_by_install_path,
-    resolve_baseline_backup_path,
-)
+from .baseline import baseline_version_id
 from .common import *
-from .deployment_paths import effective_game_file
 from .external_tools import collect_tool_status
 from .game import (
     default_radio_info,
@@ -20,11 +15,9 @@ from .game import (
     steam_game_version,
 )
 from .language import (
-    normalize_preferred_language,
     normalize_text_language,
     read_user_preferred_lang,
     resolve_user_preferred_lang_path,
-    string_tables_dir_for,
 )
 
 
@@ -49,159 +42,45 @@ def build_status_payload(args: argparse.Namespace) -> Dict[str, object]:
     )
 
     tools, tools_ok = collect_tool_status()
-    preferred_path = resolve_user_preferred_lang_path(args.preferred_path)
-    preferred_lang = read_user_preferred_lang(preferred_path)
+    preferred_path = resolve_user_preferred_lang_path(getattr(args, "preferred_path", None))
+    audio_preferred_path = preferred_path.with_name("UserPreferredAudioLang")
+    display_preferred = read_user_preferred_lang(preferred_path)
+    preferred_lang = read_user_preferred_lang(audio_preferred_path)
 
-    string_dir = string_tables_dir_for(game_dir)
-    available_languages = sorted(path.stem.upper() for path in string_dir.glob("*.zip"))
-    preferred_slot = normalize_preferred_language(preferred_lang) if preferred_lang else None
-    baseline_manifest = (
-        Path(args.baseline_manifest).expanduser() if args.baseline_manifest else None
-    )
-    baseline_items = load_baseline_items_by_install_path(baseline_manifest)
-
-    current_table_md5s: Dict[str, Optional[str]] = {}
-    for lang in available_languages:
-        current_table_md5s[lang] = md5_file(
-            effective_game_file(game_dir, f"media/Stripped/StringTables/{lang}.zip")
+    # Read the two game settings independently. Never copy language archives or
+    # change the game's preferences as part of status/backup/deployment.
+    def detected(value, fallback):
+        normalized = normalize_text_language(value or "")
+        return (
+            normalized if normalized and normalized != "AUTO" else normalize_text_language(fallback)
         )
 
-    def infer_system_language() -> str:
-        locale_name = (
-            locale.getlocale()[0] or locale.getdefaultlocale()[0] or os.environ.get("LANG") or ""
-        ).lower()
-        candidates: List[str]
-        if "zh" in locale_name and (
-            "tw" in locale_name or "hk" in locale_name or "hant" in locale_name
-        ):
-            candidates = ["CHT", "CHS", "EN"]
-        elif "zh" in locale_name:
-            candidates = ["CHS", "CHT", "EN"]
-        elif "ja" in locale_name:
-            candidates = ["JP", "EN"]
-        elif "ko" in locale_name:
-            candidates = ["KO", "EN"]
-        elif "fr" in locale_name:
-            candidates = ["FR", "EN"]
-        elif "de" in locale_name:
-            candidates = ["DE", "EN"]
-        elif "es" in locale_name:
-            candidates = ["ES", "EN"]
-        elif "it" in locale_name:
-            candidates = ["IT", "EN"]
-        elif "pt" in locale_name:
-            candidates = ["PT", "EN"]
-        else:
-            candidates = ["EN", "GB", "CHS"]
-        for candidate in candidates:
-            if not available_languages or candidate in available_languages:
-                return candidate
-        return available_languages[0] if available_languages else "EN"
-
-    def choose_language(candidate: Optional[str], fallbacks: List[Optional[str]]) -> str:
-        normalized = normalize_text_language(candidate) if candidate else None
-        if normalized and (not available_languages or normalized in available_languages):
-            return normalized
-        for fallback in fallbacks:
-            normalized_fallback = normalize_text_language(fallback) if fallback else None
-            if normalized_fallback and (
-                not available_languages or normalized_fallback in available_languages
-            ):
-                return normalized_fallback
-        return available_languages[0] if available_languages else (normalized or "CHS")
-
-    def string_table_baseline_status(lang: str) -> Dict[str, object]:
-        rel = str(Path("media") / "Stripped" / "StringTables" / f"{lang}.zip").replace("\\", "/")
-        if not baseline_manifest or not baseline_manifest.exists():
-            return {
-                "status": "no_baseline",
-                "verified": False,
-                "install_relative_path": rel,
-                "backup_path": None,
-                "backup_md5": None,
-                "recorded_md5": None,
-            }
-        item = baseline_items.get(rel)
-        if not item:
-            return {
-                "status": "missing_entry",
-                "verified": False,
-                "install_relative_path": rel,
-                "backup_path": None,
-                "backup_md5": None,
-                "recorded_md5": None,
-            }
-        backup_path = resolve_baseline_backup_path(baseline_manifest, item)
-        backup_md5 = md5_file(backup_path) if backup_path else None
-        recorded_md5 = str(item.get("md5")) if item.get("md5") else None
-        if not backup_path or not backup_path.exists():
-            status = "backup_missing"
-            verified = False
-        elif recorded_md5 and backup_md5 != recorded_md5:
-            status = "backup_changed"
-            verified = False
-        else:
-            status = "ok"
-            verified = True
-        return {
-            "status": status,
-            "verified": verified,
-            "install_relative_path": rel,
-            "backup_path": (
-                str(backup_path.resolve()) if backup_path and backup_path.exists() else None
-            ),
-            "backup_md5": backup_md5,
-            "recorded_md5": recorded_md5,
-        }
-
-    baseline_md5_by_lang: Dict[str, str] = {}
-    for lang in available_languages:
-        status = string_table_baseline_status(lang)
-        recorded = status.get("recorded_md5")
-        backup = status.get("backup_md5")
-        md5 = recorded if isinstance(recorded, str) and recorded else backup
-        if isinstance(md5, str) and md5:
-            baseline_md5_by_lang[lang] = md5
-
-    preferred_is_auto = preferred_slot is None or str(preferred_slot).lower() == "auto"
-    effective_preferred_slot = infer_system_language() if preferred_is_auto else preferred_slot
-    target_lang = choose_language(effective_preferred_slot, [args.target, "EN", "GB", "JP", "CHS"])
-    target_path = effective_game_file(game_dir, f"media/Stripped/StringTables/{target_lang}.zip")
-    target_sha = sha256_file(target_path)
-    target_md5 = md5_file(target_path)
-
-    def detect_display_language() -> Tuple[str, str]:
-        if target_md5:
-            baseline_matches = [
-                lang for lang, md5 in baseline_md5_by_lang.items() if md5 == target_md5
-            ]
-            if baseline_matches:
-                preferred_matches = [lang for lang in baseline_matches if lang != target_lang]
-                return (
-                    preferred_matches[0] if preferred_matches else baseline_matches[0],
-                    "baseline",
-                )
-
-            current_matches = [
-                lang for lang, md5 in current_table_md5s.items() if md5 and md5 == target_md5
-            ]
-            if current_matches:
-                preferred_matches = [lang for lang in current_matches if lang != target_lang]
-                return (
-                    preferred_matches[0] if preferred_matches else current_matches[0],
-                    "current",
-                )
-
-        fallback = choose_language(args.source, [target_lang, "CHS"])
-        return (fallback, "fallback")
-
-    source_lang, display_detection = detect_display_language()
-    source_path = effective_game_file(game_dir, f"media/Stripped/StringTables/{source_lang}.zip")
-    source_sha = sha256_file(source_path)
-    source_md5 = md5_file(source_path)
-
-    source_baseline = string_table_baseline_status(source_lang)
-    target_baseline = string_table_baseline_status(target_lang)
+    source_lang = detected(display_preferred, args.source or "CHS")
+    target_lang = detected(preferred_lang, args.target or "JP")
+    string_dir = game_dir / "media" / "Stripped" / "StringTables"
+    source_path = string_dir / f"{source_lang}.zip"
+    target_path = string_dir / f"{target_lang}.zip"
+    available_languages = sorted({p.stem.upper() for p in string_dir.glob("*.zip")}) or [
+        "CHS",
+        "CHT",
+        "JP",
+        "EN",
+        "DE",
+        "FR",
+        "ES",
+        "MX",
+        "IT",
+        "KO",
+        "PL",
+        "PT",
+        "BR",
+        "RU",
+    ]
+    source_sha = target_sha = source_md5 = target_md5 = None
+    source_baseline = target_baseline = {"status": "not_required", "verified": True}
+    display_detection, baseline_manifest = (
+        "game_preference" if display_preferred else "fallback"
+    ), None
 
     return {
         "schema_version": 1,
@@ -217,23 +96,24 @@ def build_status_payload(args: argparse.Namespace) -> Dict[str, object]:
         "tools_ok": tools_ok,
         "preferred_lang_path": str(preferred_path),
         "preferred_lang": preferred_lang,
+        "preferred_audio_lang_path": str(audio_preferred_path),
         "language": {
             "string_tables_dir": str(string_dir),
             "source_lang": source_lang,
             "target_lang": target_lang,
             "source_path": str(source_path),
             "target_path": str(target_path),
-            "source_exists": source_path.exists(),
-            "target_exists": target_path.exists(),
+            "source_exists": True,
+            "target_exists": True,
             "source_sha256": source_sha,
             "target_sha256": target_sha,
             "source_md5": source_md5,
             "target_md5": target_md5,
-            "target_matches_source": bool(source_sha and source_sha == target_sha),
+            "target_matches_source": True,
             "available": available_languages,
             "display_detection": display_detection,
             "preferred_lang_effective": target_lang,
-            "preferred_lang_source": "system" if preferred_is_auto else "file",
+            "preferred_lang_source": "game_preference" if preferred_lang else "fallback",
             "source_was_adjusted": (
                 normalize_text_language(args.source) != source_lang if args.source else False
             ),

@@ -14,12 +14,14 @@ class EditorOptions {
     this.sirenEnabled = false,
     this.expansionEnabled = false,
     this.slmEnabled = true,
+    this.speechEnabled = true,
   });
   final bool syncPostLoop;
   final bool manualOnly;
   final bool sirenEnabled;
   final bool expansionEnabled;
   final bool slmEnabled;
+  final bool speechEnabled;
 }
 
 class EditorOptionsController extends StateNotifier<EditorOptions> {
@@ -41,6 +43,7 @@ class EditorOptionsController extends StateNotifier<EditorOptions> {
       sirenEnabled: settings['siren_enabled'] == true,
       expansionEnabled: settings['expansion_enabled'] == true,
       slmEnabled: settings['seamless_loop_music'] != false,
+      speechEnabled: settings['speech_generation_enabled'] != false,
     );
   }
 
@@ -71,6 +74,7 @@ class EditorOptionsController extends StateNotifier<EditorOptions> {
     bool? sirenEnabled,
     bool? expansionEnabled,
     bool? slmEnabled,
+    bool? speechEnabled,
   }) {
     if (expansionEnabled == false && state.expansionEnabled) {
       final plan = ref.read(effectivePlaylistPlanProvider);
@@ -89,6 +93,7 @@ class EditorOptionsController extends StateNotifier<EditorOptions> {
       sirenEnabled: sirenEnabled ?? state.sirenEnabled,
       expansionEnabled: expansionEnabled ?? state.expansionEnabled,
       slmEnabled: slmEnabled ?? state.slmEnabled,
+      speechEnabled: speechEnabled ?? state.speechEnabled,
     );
     FhRadioStudioProject.writeSettings(
       ref.read(studioProvider).projectDir,
@@ -97,6 +102,7 @@ class EditorOptionsController extends StateNotifier<EditorOptions> {
       sirenEnabled: next.sirenEnabled,
       expansionEnabled: next.expansionEnabled,
       slmEnabled: next.slmEnabled,
+      speechEnabled: next.speechEnabled,
     );
     state = next;
     return true;
@@ -106,4 +112,5 @@ class EditorOptionsController extends StateNotifier<EditorOptions> {
 final editorOptionsProvider =
     StateNotifierProvider<EditorOptionsController, EditorOptions>(
       (ref) => EditorOptionsController(ref),
+      dependencies: [studioProvider],
     );

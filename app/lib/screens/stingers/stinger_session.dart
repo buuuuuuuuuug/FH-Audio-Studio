@@ -31,12 +31,14 @@ class StingerSession {
         'serve',
         '--project-dir',
         project,
-        '--game-dir',
-        game,
-        '--ffmpeg',
-        '$tools/ffmpeg/ffmpeg.exe',
-        '--vgmstream-cli',
-        '$tools/vgmstream/vgmstream-cli.exe',
+        if (command != 'speech') ...[
+          '--game-dir',
+          game,
+          '--ffmpeg',
+          '$tools/ffmpeg/ffmpeg.exe',
+          '--vgmstream-cli',
+          '$tools/vgmstream/vgmstream-cli.exe',
+        ],
       ]);
       if (_disposed) {
         process.kill();
@@ -159,11 +161,8 @@ class StingerSession {
     final process = _process;
     _process = null;
     if (process != null) {
-      unawaited(
-        process.stdin.close().then<void>((_) {}, onError: (Object _) {}),
-      );
+      unawaited(FhRadioStudioCli.stopWorker(process));
     }
-    process?.kill();
     _fail(const FormatException('已关闭音频编辑。'));
   }
 }

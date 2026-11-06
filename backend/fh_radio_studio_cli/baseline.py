@@ -12,12 +12,17 @@ from .file_transaction import (
     replace_files_atomically,
 )
 from .game import audio_dir_for, game_root_for, resolve_game_dir, steam_game_version
+from .language_policy import is_language_support_file
 from .package import collect_package_deploy_files, package_audio_dir
 from .project_json_guard import write_project_json
 from .project_refs import is_project_ref, project_path_or_absolute, resolve_project_ref
 
 PROGRESS_PREFIX = "FH_RADIO_STUDIO_PROGRESS "
 _PARALLEL_HASH_THRESHOLD_BYTES = 64 * 1024 * 1024
+
+
+def _excluded_baseline_path(path):
+    return is_baseline_derived_index_path(path) or is_language_support_file(path)
 
 
 def baseline_manifest_path(root: Path) -> Path:
@@ -29,28 +34,6 @@ def _project_root_from_baseline_dir(baseline_dir: Path) -> Optional[Path]:
         return None
     project_root = baseline_dir.parent.parent
     return project_root if project_root != baseline_dir.parent else None
-
-
-def _clear_prepared_packages_for_overwrite(baseline_dir: Path) -> List[Path]:
-    project_root = _project_root_from_baseline_dir(baseline_dir)
-    if project_root is None:
-        return []
-    packages_root = project_root / "packages"
-    metadata_root = project_root / ".fh-radio-studio"
-    targets = [
-        packages_root / "current",
-        packages_root / "pending",
-        metadata_root / "last_applied_package_manifest.json",
-    ]
-    cleared: List[Path] = []
-    for target in targets:
-        if target.is_dir():
-            shutil.rmtree(target)
-            cleared.append(target)
-        elif target.is_file():
-            target.unlink()
-            cleared.append(target)
-    return cleared
 
 
 def _emit_progress(enabled: bool, payload: Dict[str, object]) -> None:
@@ -267,7 +250,7 @@ def load_baseline_md5s(path: Optional[str]) -> Dict[str, str]:
             continue
         rel = str(item.get("relative_path") or "").replace("\\", "/")
         install_rel = str(item.get("install_relative_path") or "").replace("\\", "/")
-        if is_baseline_derived_index_path(rel) or is_baseline_derived_index_path(install_rel):
+        if _excluded_baseline_path(rel) or _excluded_baseline_path(install_rel):
             continue
         md5 = item.get("md5")
         if isinstance(md5, str) and md5:
@@ -376,19 +359,6 @@ def collect_game_baseline_file_specs(
                     ).replace("\\", "/"),
                 }
             )
-    string_tables = game_dir / "media" / "Stripped" / "StringTables"
-    if string_tables.is_dir():
-        for table in sorted(string_tables.glob("*.zip")):
-            specs.append(
-                {
-                    "source": table,
-                    "scope": "string_table",
-                    "relative_path": table.name,
-                    "install_relative_path": str(
-                        Path("media") / "Stripped" / "StringTables" / table.name
-                    ).replace("\\", "/"),
-                }
-            )
     if not specs:
         die(
             f"No baselineable RadioInfo_*.xml or FMODBanks/R*_Tracks*.assets.bank found in {audio_dir}"
@@ -435,7 +405,7 @@ def load_baseline_items_by_install_path(path: Optional[Path]) -> Dict[str, Dict[
             continue
         rel = str(item.get("relative_path") or "").replace("\\", "/")
         install_rel = str(item.get("install_relative_path") or "").replace("\\", "/")
-        if is_baseline_derived_index_path(rel) or is_baseline_derived_index_path(install_rel):
+        if _excluded_baseline_path(rel) or _excluded_baseline_path(install_rel):
             continue
         key = install_rel or (f"media/audio/{rel}" if rel else "")
         if key:
@@ -733,9 +703,8 @@ def cmd_baseline(args: argparse.Namespace) -> int:
                 )
 
             write_project_json(manifest_path, manifest_data, project_dir=project_dir)
-        if args.overwrite and args.state == "current":
-            for cleared in _clear_prepared_packages_for_overwrite(out_dir):
-                print(f"  cleared package artifact {cleared}")
+        # Refreshing the safety reference is independent of creative work.
+        # Keep prepared packages, editing drafts and deployment ownership records.
         print(f"Baseline manifest: {manifest_path}")
         return 0
 
@@ -773,7 +742,7 @@ def cmd_baseline(args: argparse.Namespace) -> int:
         for item in pending_manifest_data["files"]:
             if not isinstance(item, dict):
                 die(f"Invalid pending baseline file entry: {pending_manifest}")
-            if item.get("manifest_only") or is_baseline_derived_index_path(
+            if item.get("manifest_only") or _excluded_baseline_path(
                 item.get("install_relative_path")
             ):
                 continue
@@ -824,7 +793,20 @@ def cmd_baseline(args: argparse.Namespace) -> int:
             print("\nDry run only. Re-run with --yes to delete pending baseline.")
             return 0
         if pending_dir.exists():
-            shutil.rmtree(pending_dir)
+            resolved = pending_dir.resolve()
+            project = _project_root_from_baseline_dir(resolved)
+            if (
+                pending_dir.is_symlink()
+                or getattr(pending_dir, "is_junction", lambda: False)()
+                or project is None
+            ):
+                die("Refusing to delete a directory outside project backups.")
+            if not (project / ".fh-radio-studio/project.json").is_file():
+                die("Pending baseline does not belong to a recognized project.")
+            manifest = load_manifest(baseline_manifest_path(resolved))
+            if manifest.get("kind") != "game_baseline" or manifest.get("state") != "pending-verify":
+                die("Only a pending-verify game baseline may be discarded.")
+            shutil.rmtree(resolved)
         print("Pending baseline removed.")
         return 0
 
@@ -852,8 +834,8 @@ def cmd_baseline(args: argparse.Namespace) -> int:
                 item
                 for item in list(manifest.get("files", []))
                 if isinstance(item, dict)
-                and not is_baseline_derived_index_path(item.get("relative_path"))
-                and not is_baseline_derived_index_path(item.get("install_relative_path"))
+                and not _excluded_baseline_path(item.get("relative_path"))
+                and not _excluded_baseline_path(item.get("install_relative_path"))
             ]
             if not files:
                 die(f"Baseline has no files: {manifest_path}")

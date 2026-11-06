@@ -22,6 +22,8 @@ enum TourPage {
   voices,
   voiceMaterial,
   voiceReplacementEditor,
+  speech,
+  voiceGeneration,
   settings,
 }
 
@@ -53,15 +55,53 @@ const _voiceEditorSteps = [
     '在播放指针处插入静音，默认 100ms，可按 50ms 调整；选区可静音或删除。操作保留原素材文件。',
   ),
   TourStep('settings', '素材信息与音量', '调整音量；素材池中的音频还可修改名称和文件夹。'),
-  TourStep(
-    'duration',
-    '替换后的时长',
-    '默认使用编辑后的实际时长；开启「保持原时长」后，不足补静音、超出裁剪。游戏事件仍可能限制播放长度。',
-    optional: true,
-  ),
 ];
 
 const _steps = <TourPage, List<TourStep>>{
+  TourPage.speech: [
+    TourStep(
+      'speech-api',
+      'API 与推理引擎',
+      '这里查看 API 状态；推理引擎中可安装组件、连接已有 API，或启动本地服务。API 可用后才能生成。',
+    ),
+    TourStep(
+      'speech-models',
+      '模型与声音预设',
+      '导入 GPT、SoVITS 模型并选择对应版本。当前配置可保存为声音预设；名称旁的 * 表示修改尚未保存。',
+    ),
+    TourStep(
+      'speech-reference',
+      '语言与参考音频',
+      '选择生成语言与参考语言，导入主参考音频并填写对应文本；可试听参考，或添加辅助参考。参考音频影响音色与语气。',
+    ),
+    TourStep(
+      'speech-parameters',
+      '推理参数',
+      '调整语速、随机种子和采样参数；数字可直接输入或上下微调。参数随声音预设保存，不确定时可恢复默认。',
+    ),
+    TourStep(
+      'speech-generate',
+      '生成文本与音频',
+      '输入或导入文本，可分段批量生成。生成后试听，展开波形编辑；满意后加入素材池，或导出音频。',
+    ),
+  ],
+  TourPage.voiceGeneration: [
+    TourStep(
+      'generation-text',
+      '文本与声音',
+      '选择条目后修改文本；可切换语音语言或显示语言，选择声音预设，或打开模型设置。',
+    ),
+    TourStep(
+      'generation-actions',
+      '生成与替换',
+      '生成完成会自动替换当前条目，批量时可跳过已替换。取消应用保留文件；删除文件会一并移除替换。试听后记得保存修改。',
+    ),
+    TourStep(
+      'generation-wave',
+      '试听与简易编辑',
+      '左键定位播放，右键拖动选区；可插入静音、静音或删除选区，调整音量。支持撤销、重做和恢复原音。',
+    ),
+  ],
   TourPage.stingers: [
     TourStep('view', '查看与编辑台呼', '「游戏内」只读查看当前台呼；「准备包」编辑替换。语音语言跟随概览设置，可复制游戏内排布。'),
     TourStep(
@@ -119,7 +159,7 @@ const _steps = <TourPage, List<TourStep>>{
     TourStep(
       'tools',
       '查找与批量操作',
-      '搜索原音文本、替换名称或分类；多选条目可导出文本或加入素材池，也可撤销、重做与恢复原音。右侧可打开音频目录或删除解析。',
+      '搜索原音文本、替换名称或分类；多选条目可导出文本。搜索框右侧可撤销、重做、恢复原音或删除解析；顶部可打开总目录。',
       endTarget: 'tools-end',
       optional: true,
     ),
@@ -148,11 +188,6 @@ const _steps = <TourPage, List<TourStep>>{
       'seamless',
       'SeamlessLoopMusic',
       '专注音高与响度衔接，寻找自然的 TL／PL 循环；无需加载重型 AI，无 AI 模式也可用，推荐启用。选点后仍需试听确认。',
-    ),
-    TourStep(
-      'split',
-      '分场景编辑',
-      '实验功能，需要先开启电台扩容。分别编排漫游与比赛，播放列表也有开关；关闭时保留两套排布，再开启可恢复。',
     ),
     TourStep('workflow', '检查与写入', '这里查看准备状态。完成歌曲和电台排布后，构建准备包，再按提示写入游戏。'),
   ],
@@ -216,7 +251,7 @@ const _steps = <TourPage, List<TourStep>>{
     TourStep(
       'split',
       '分场景编辑',
-      '实验功能，可分别编排漫游和比赛，概览基础设置也有开关。关闭时选择统一列表并保留两套排布，再开启即可恢复；统一期间的修改不会并入。',
+      '实验功能，可分别编排漫游和比赛，开关位于本页工具栏。关闭时选择统一列表并保留两套排布，再开启即可恢复；统一期间的修改不会并入。',
     ),
     TourStep(
       'search',
@@ -243,12 +278,7 @@ const _steps = <TourPage, List<TourStep>>{
       '分别调整主界面与人工精修窗口宽度；支持恢复默认。',
       endTarget: 'size-end',
     ),
-    TourStep(
-      'help',
-      '快捷键与塞壬唱片',
-      '修改操作快捷键；启用塞壬唱片后，可从在线唱片库试听和导入歌曲。',
-      endTarget: 'help-end',
-    ),
+    TourStep('help', '快捷键与功能', '修改操作快捷键，切换语音生成和塞壬唱片入口。', endTarget: 'help-end'),
   ],
 };
 

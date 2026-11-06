@@ -4,6 +4,7 @@ import '../theme/text_styles.dart';
 import 'rm_button.dart';
 import 'accent_color_wheel.dart';
 import 'rm_field.dart';
+import 'timing_dialog_frame.dart';
 
 class CustomAccentDialog extends StatefulWidget {
   const CustomAccentDialog({super.key, required this.initial});
@@ -71,13 +72,13 @@ class _CustomAccentDialogState extends State<CustomAccentDialog> {
         ),
       ],
     );
-    return AlertDialog(
-      backgroundColor: rm.panel,
-      title: Text(
-        '自选强调色',
-        style: RmText.sans(16, weight: FontWeight.w600, color: rm.fg),
-      ),
-      content: SizedBox(
+    return TimingDialogFrame(
+      title: '自选强调色',
+      icon: 'palette',
+      description: '选择颜色或输入十六进制色值',
+      busy: false,
+      width: 440,
+      body: SizedBox(
         width: 360,
         child: SingleChildScrollView(
           child: Column(

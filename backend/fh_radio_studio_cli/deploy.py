@@ -11,7 +11,7 @@ from .deployment_paths import (
 )
 from .file_transaction import game_file_write_lock, replace_files_atomically
 from .game import game_root_for, resolve_game_dir, steam_game_version
-from .language import normalize_preferred_language, resolve_user_preferred_lang_path
+from .language_policy import is_language_support_file
 from .package import collect_package_deploy_files
 from .project_json_guard import write_project_json
 from .project_refs import project_path_or_absolute
@@ -50,20 +50,14 @@ def _last_applied_manifest_data(
             }
         )
     retained = 0
-    if (
-        game_dir is not None
-        and (
-            retain_previous
-            or (package_manifest.get("package_delta") or {}).get("mode") == "changed_files"
-        )
-        and manifest_path.is_file()
-    ):
+    if game_dir is not None and manifest_path.is_file():
         previous = load_manifest(manifest_path)
         new_paths = {item["install_relative_path"] for item in package_files}
         for old in previous.get("package_files", []):
             relative = str(old.get("install_relative_path") or "")
             if (
                 relative
+                and not is_language_support_file(relative)
                 and relative not in new_paths
                 and relative not in (removed_paths or set())
                 and md5_file(contained_game_path(game_dir, relative)) == old.get("md5")
@@ -165,8 +159,12 @@ def _deploy_package(args: argparse.Namespace, game_dir: Path) -> int:
         excluded_files,
         selection_issues,
     )
+    from .game_update import validate_package_inputs
 
     excluded = excluded_files(args, files, package_manifest)
+    validate_package_inputs(
+        package_manifest, game_dir, [f for f in files if f["install_relative_path"] not in excluded]
+    )
     selected_xml = {
         str(f["install_relative_path"])
         for f in files
@@ -224,11 +222,23 @@ def _deploy_package(args: argparse.Namespace, game_dir: Path) -> int:
         source_size = file_size(src)
         current_before_md5 = md5_file(dest)
         canonical_rel = str(item["package_install_relative_path"])
+        from .deployment_paths import effective_game_file
+
+        effective_md5 = md5_file(effective_game_file(game_dir, canonical_rel))
+        unchanged = source_md5 == (
+            effective_md5 if target_root == "mediapc" else current_before_md5
+        )
         baseline_md5 = baseline_md5s.get(canonical_rel) or baseline_md5s.get(rel_text)
         last_applied_md5 = last_applied_md5s.get(install_rel_text) or last_applied_md5s.get(
             rel_text
         )
         selected = canonical_rel not in excluded
+        base_md5 = md5_file(contained_game_path(game_dir, canonical_rel))
+        if selected and not unchanged and baseline_md5 and base_md5 is not None and not args.force:
+            if base_md5 not in {baseline_md5, source_md5, last_applied_md5s.get(canonical_rel)}:
+                reject_file(
+                    f"{src.name} 的游戏原文件与当前备份不一致，可能已经更新。请更新原始备份并重新构建；尚未写入任何文件。"
+                )
         voice = next(
             (
                 b
@@ -237,7 +247,7 @@ def _deploy_package(args: argparse.Namespace, game_dir: Path) -> int:
             ),
             None,
         )
-        if selected and voice and voice.get("original_md5"):
+        if selected and not unchanged and voice and voice.get("original_md5"):
             from .deployment_paths import effective_game_file
 
             current_voice = md5_file(effective_game_file(game_dir, canonical_rel))
@@ -252,7 +262,16 @@ def _deploy_package(args: argparse.Namespace, game_dir: Path) -> int:
                 reject_file(
                     f"{src.name} 在确认备份后发生变化，请重新核对资源，或取消勾选此文件。尚未写入任何文件。"
                 )
-        if selected and not args.force and (target_root == "media" or dest.exists()):
+            if base_md5 is not None and base_md5 not in trusted_voice:
+                reject_file(
+                    f"{src.name} 的基础语音资源已更新，请重新解析并重建准备包；尚未写入任何文件。"
+                )
+        if (
+            selected
+            and not unchanged
+            and not args.force
+            and (target_root == "media" or dest.exists())
+        ):
             if baseline_md5 is None and target_root == "media":
                 reject_file(f"{src.name} 缺少原始备份。请先补齐备份，或取消勾选此文件。")
             trusted_md5s = {
@@ -294,6 +313,7 @@ def _deploy_package(args: argparse.Namespace, game_dir: Path) -> int:
                 "last_applied_md5": last_applied_md5,
                 "current_before_md5": current_before_md5,
                 "force": args.force,
+                "unchanged": unchanged,
             }
         )
     if getattr(args, "json", False):
@@ -317,10 +337,8 @@ def _deploy_package(args: argparse.Namespace, game_dir: Path) -> int:
         print("\nDry run only. Re-run with --yes to write files.")
         return 0
 
-    manifest_files = [f for f in manifest_files if f["selected"]]
-    language = package_manifest.get("language") if isinstance(package_manifest, dict) else None
-    if PREFERRED_LANGUAGE in excluded:
-        language = None
+    manifest_files = [f for f in manifest_files if f["selected"] and not f["unchanged"]]
+    language = None  # Legacy package language settings are deliberately ignored.
     fingerprint_path = getattr(args, "last_applied_manifest", None)
     if DEPLOYMENT_RECORD in excluded:
         fingerprint_path = None
@@ -332,12 +350,6 @@ def _deploy_package(args: argparse.Namespace, game_dir: Path) -> int:
             (Path(str(item["source"])), Path(str(item["destination"])), item["package_md5"])
             for item in manifest_files
         ]
-        if isinstance(language, dict) and language.get("preferred_lang"):
-            preferred_lang = normalize_preferred_language(str(language["preferred_lang"]))
-            preferred_path = resolve_user_preferred_lang_path(getattr(args, "preferred_path", None))
-            staged_language = staging / "UserPreferredLang"
-            staged_language.write_text(preferred_lang, encoding="utf-8")
-            replacements.append((staged_language, preferred_path, None))
         if fingerprint_path:
             fingerprint = Path(fingerprint_path).expanduser()
             staged_manifest = staging / "last_applied_package_manifest.json"
@@ -364,8 +376,6 @@ def _deploy_package(args: argparse.Namespace, game_dir: Path) -> int:
         print(f"  copied {item['install_relative_path']}")
     for overlay in owned_overlay_removals:
         print(f"  removed owned override {overlay.relative_to(game_dir)}")
-    if isinstance(language, dict) and language.get("preferred_lang"):
-        print(f"  wrote UserPreferredLang -> {preferred_lang}")
     if fingerprint_path:
         print(f"Last applied fingerprint: {Path(args.last_applied_manifest).expanduser()}")
     return 0

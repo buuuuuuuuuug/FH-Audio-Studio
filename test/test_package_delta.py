@@ -340,6 +340,10 @@ def test_atomic_stinger_build_compacts_before_publication(tmp_path, monkeypatch)
     project, output, xml, _, args = composition_fixture.__wrapped__(tmp_path)
     game = tmp_path / "Game"
     write(game / "media/audio/RadioInfo_JP.xml", xml.read_bytes())
+    write(
+        game / "media/audio/FMODBanks/R9_Stingers_JP.assets.bank",
+        (project / ".fh-radio-studio/original.assets.bank").read_bytes(),
+    )
     write(game / "media/audio/FMODBanks/R9_Tracks_CU1.assets.bank", b"same-music")
     args.game_dir = str(game)
     monkeypatch.setattr("backend.fh_radio_studio_cli.stingers.render", fake_render)

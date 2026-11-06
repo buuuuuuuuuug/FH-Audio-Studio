@@ -574,6 +574,14 @@ def preview_import(
                 raise ValueError("对应歌曲文件不存在")
             result["source_matched"] = True
             duration = entry.get("duration_sec")
+            frames, rate = entry.get("samples"), entry.get("sample_rate")
+            if (
+                isinstance(frames, (int, float))
+                and isinstance(rate, (int, float))
+                and frames > 0
+                and rate > 0
+            ):
+                duration = frames / rate
             stat = source.stat()
             if (
                 not duration
@@ -621,7 +629,7 @@ def preview_import(
                     not isinstance(v, (int, float))
                     or not math.isfinite(v)
                     or v < 0
-                    or v > duration + 1e-6
+                    or v > duration + 0.0005 + 1 / SAMPLE_RATE
                     for v in values.values()
                 ):
                     raise ValueError(f"{group.upper()} 超出歌曲时长 {duration:.3f} 秒")

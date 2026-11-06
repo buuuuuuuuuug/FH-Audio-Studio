@@ -1,3 +1,5 @@
+import 'package:fh_radio_studio/core/speech_generation.dart';
+import 'speech_generation_test.dart' show FakeSpeech;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -70,6 +72,11 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           studioProvider.overrideWith((ref) => controller),
         ],
@@ -159,6 +166,11 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           studioProvider.overrideWith((ref) => controller),
         ],
@@ -256,6 +268,11 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          speechGenerationProvider.overrideWith((ref, key) {
+            final session = FakeSpeech();
+            ref.onDispose(session.dispose);
+            return session;
+          }),
           sharedPreferencesProvider.overrideWithValue(prefs),
           studioProvider.overrideWith((ref) => controller),
         ],

@@ -28,7 +28,6 @@ class DeploymentTargetsTest(unittest.TestCase):
         self.names = [
             "media/audio/RadioInfo_CN.xml",
             "media/audio/FMODBanks/R9_Tracks_CU1.assets.bank",
-            "media/Stripped/StringTables/CHS.zip",
         ]
         original_files = []
         for name in self.names:
@@ -62,7 +61,8 @@ class DeploymentTargetsTest(unittest.TestCase):
         args = build_parser().parse_args(["deploy-package", str(self.package)])
         self.assertEqual(args.target_root, "mediapc")
         self.assertEqual(
-            deployment_relative_path(self.names[2]), "mediapc/Stripped/StringTables/CHS.zip"
+            deployment_relative_path("media/Stripped/StringTables/CHS.zip"),
+            "mediapc/Stripped/StringTables/CHS.zip",
         )
         for path in [
             "/media/audio/file",
@@ -99,7 +99,7 @@ class DeploymentTargetsTest(unittest.TestCase):
         self.assertEqual(json.loads(self.fingerprint.read_text())["deployment_target"], "media")
 
     def test_untrusted_overlay_fails_before_any_write(self):
-        conflict = self.game / deployment_relative_path(self.names[2])
+        conflict = self.game / deployment_relative_path(self.names[1])
         conflict.parent.mkdir(parents=True)
         conflict.write_bytes(b"other-mod")
         with self.assertRaises(CliError):
@@ -138,8 +138,8 @@ class DeploymentTargetsTest(unittest.TestCase):
         self.assertEqual(effective_audio_dir_for(self.game), self.game / "mediapc/audio")
         self.assertEqual(audio_dir_for(self.game), self.game / "media/audio")
         self.assertEqual(
-            effective_game_file(self.game, self.names[2]),
-            self.game / "mediapc/Stripped/StringTables/CHS.zip",
+            effective_game_file(self.game, self.names[1]),
+            self.game / "mediapc/audio/FMODBanks/R9_Tracks_CU1.assets.bank",
         )
 
 

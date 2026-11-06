@@ -1,5 +1,6 @@
 import '../widgets/feature_tour.dart';
 import '../widgets/editor_shortcuts_dialog.dart';
+import '../widgets/speech_experiment_setting.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -86,7 +87,13 @@ class _TweaksPanelState extends ConsumerState<TweaksPanel> {
               _section(
                 context,
                 '功能',
-                _sirenSection(context),
+                Column(
+                  children: [
+                    const SpeechExperimentSetting(),
+                    const SizedBox(height: 8),
+                    _sirenSection(context),
+                  ],
+                ),
               ).tourAnchor('help-end'),
             ],
           ),

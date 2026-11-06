@@ -61,7 +61,7 @@ def test_status_json_reports_mock_radio_and_language_slots(mock_game) -> None:
 
     assert_cli_ok(result)
     payload = json.loads(result.stdout)
-    assert payload["preferred_lang"] == "EN"
+    assert payload["preferred_lang"] is None
     assert payload["selected_radio"]["number"] == 4
     assert payload["selected_radio"]["name"] == "Horizon XS"
     assert payload["selected_radio"]["tracks"] == 3
@@ -69,7 +69,7 @@ def test_status_json_reports_mock_radio_and_language_slots(mock_game) -> None:
     assert payload["selected_radio"]["target_bank_name"] == "R4_Tracks_CU1"
     assert payload["selected_radio"]["playlists"]["FreeRoam"] == 3
     assert payload["language"]["target_lang"] == "EN"
-    assert payload["language"]["available"] == ["CHS", "EN", "JP"]
+    assert {"CHS", "EN", "JP"} <= set(payload["language"]["available"])
     assert payload["language"]["target_exists"] is True
 
 
@@ -128,15 +128,15 @@ def test_baseline_plan_json_includes_versioned_mock_files(mock_game) -> None:
     assert_cli_ok(result)
     payload = json.loads(result.stdout)
     assert payload["game_version_id"] == "steam-b99000001"
-    assert payload["file_count"] == 6
+    assert payload["file_count"] == 3
     assert payload["by_scope"]["radio_info"] == 2
     assert payload["by_scope"]["radio_bank"] == 1
-    assert payload["by_scope"]["string_table"] == 3
+    assert payload["by_scope"].get("string_table", 0) == 0
     install_paths = {item["install_relative_path"] for item in payload["files"]}
     assert "media/audio/RadioInfo_CN.xml" in install_paths
     assert "media/audio/RadioInfo_EN.xml" in install_paths
     assert "media/audio/FMODBanks/R4_Tracks_CU1.assets.bank" in install_paths
-    assert "media/Stripped/StringTables/CHS.zip" in install_paths
+    assert "media/Stripped/StringTables/CHS.zip" not in install_paths
     assert all(item["baseline_status"] == "not_backed_up" for item in payload["files"])
 
 
@@ -154,7 +154,7 @@ def test_baseline_plan_emits_parallel_hash_progress(mock_game) -> None:
 
     assert_cli_ok(result)
     payload = json.loads(result.stdout)
-    assert payload["file_count"] == 6
+    assert payload["file_count"] == 3
     progress_prefix = "FH_RADIO_STUDIO_PROGRESS "
     events = [
         json.loads(line[len(progress_prefix) :])
@@ -207,7 +207,7 @@ def test_baseline_plan_and_status_resolve_moved_baseline_files(mock_game, full_p
     )
     assert_cli_ok(plan)
     plan_payload = json.loads(plan.stdout)
-    assert plan_payload["file_count"] == 6
+    assert plan_payload["file_count"] == 3
     assert all(item["baseline_status"] == "ok" for item in plan_payload["files"])
 
     status = run_cli(
@@ -227,7 +227,7 @@ def test_baseline_plan_and_status_resolve_moved_baseline_files(mock_game, full_p
     assert_cli_ok(status)
     status_payload = json.loads(status.stdout)
     assert status_payload["language"]["voice_slot_verified"] is True
-    assert status_payload["language"]["target_baseline"]["status"] == "ok"
+    assert status_payload["language"]["target_baseline"]["status"] == "not_required"
 
 
 def test_verify_integrity_reports_current_baseline_without_package(mock_game, full_project) -> None:
@@ -258,10 +258,10 @@ def test_verify_integrity_reports_current_baseline_without_package(mock_game, fu
     payload = json.loads(result.stdout)
     integrity = payload["integrity"]
     assert payload["kind"] == "file_integrity"
-    assert payload["baseline_plan"]["file_count"] == 6
+    assert payload["baseline_plan"]["file_count"] == 3
     assert integrity["level"] == "no_package"
-    assert integrity["checked_files"] == 6
-    assert integrity["baseline_matches"] == 6
+    assert integrity["checked_files"] == 3
+    assert integrity["baseline_matches"] == 3
     assert integrity["changed_files"] == 0
 
 
@@ -302,7 +302,7 @@ def test_verify_integrity_tolerates_empty_current_package_dir(mock_game, full_pr
     integrity = payload["integrity"]
     assert integrity["level"] == "no_package"
     assert integrity["package_manifest_path"] is None
-    assert integrity["baseline_matches"] == 6
+    assert integrity["baseline_matches"] == 3
     assert integrity["changed_files"] == 0
 
 
@@ -689,23 +689,18 @@ def test_build_package_completes_deploy_set_from_baseline(mock_game, full_projec
         )
     )
     install_paths = {item["install_relative_path"] for item in manifest["package_files"]}
-    assert manifest["baseline_completion"]["baseline_files"] == 6
-    assert manifest["baseline_completion"]["copied_baseline_files"] == 2
-    assert len(install_paths) == 6
+    assert manifest["baseline_completion"]["baseline_files"] == 3
+    assert manifest["baseline_completion"]["copied_baseline_files"] == 0
+    assert len(install_paths) == 3
     assert install_paths == {
         "media/audio/RadioInfo_CN.xml",
         "media/audio/RadioInfo_EN.xml",
         "media/audio/FMODBanks/R4_Tracks_CU1.assets.bank",
-        "media/Stripped/StringTables/CHS.zip",
-        "media/Stripped/StringTables/EN.zip",
-        "media/Stripped/StringTables/JP.zip",
     }
-    assert md5_file(
+    assert not (
         package_dir / "package" / "media" / "Stripped" / "StringTables" / "CHS.zip"
-    ) == md5_file(mock_game.game_dir / "media" / "Stripped" / "StringTables" / "CHS.zip")
-    assert md5_file(
-        package_dir / "package" / "media" / "Stripped" / "StringTables" / "JP.zip"
-    ) == md5_file(mock_game.game_dir / "media" / "Stripped" / "StringTables" / "JP.zip")
+    ).exists()
+    assert not (package_dir / "package" / "media" / "Stripped" / "StringTables" / "JP.zip").exists()
 
 
 def test_baseline_promote_rewrites_backup_paths_after_replace(mock_game, full_project) -> None:
@@ -755,7 +750,7 @@ def test_baseline_promote_rewrites_backup_paths_after_replace(mock_game, full_pr
     promoted_manifest = current_dir / "baseline_manifest.json"
     payload = json.loads(promoted_manifest.read_text(encoding="utf-8"))
     assert payload["state"] == "current"
-    assert payload["file_count"] == 6
+    assert payload["file_count"] == 3
     for item in payload["files"]:
         backup_path = item["backup_path"]
         assert backup_path.startswith("fh-project:/backups/baseline-current/")
@@ -848,7 +843,9 @@ def test_baseline_apply_overwrites_without_creating_restore_backup(mock_game, fu
     assert "No backup or restore log was created." in apply.stdout
 
 
-def test_baseline_create_overwrite_clears_prepared_package_slots(mock_game, full_project) -> None:
+def test_baseline_create_overwrite_preserves_prepared_package_slots(
+    mock_game, full_project
+) -> None:
     baseline_dir = full_project.backups_dir / "baseline-current"
     create = run_cli(
         "baseline",
@@ -886,10 +883,10 @@ def test_baseline_create_overwrite_clears_prepared_package_slots(mock_game, full
 
     assert_cli_ok(overwrite)
     assert (baseline_dir / "baseline_manifest.json").exists()
-    assert not current_package.exists()
-    assert not pending_package.exists()
-    assert not last_applied.exists()
-    assert "cleared package artifact" in overwrite.stdout
+    assert (current_package / "package-marker.txt").read_text() == "stale package\n"
+    assert (pending_package / "package-marker.txt").read_text() == "stale package\n"
+    assert last_applied.read_text() == "{}\n"
+    assert "cleared package artifact" not in overwrite.stdout
 
 
 def test_baseline_apply_rejects_backup_dir_option(mock_game, full_project) -> None:
@@ -966,7 +963,7 @@ def test_full_project_flow_builds_baseline_and_deploys_to_mock(mock_game, full_p
     assert_cli_ok(baseline)
     baseline_manifest = baseline_dir / "baseline_manifest.json"
     baseline_payload = json.loads(baseline_manifest.read_text(encoding="utf-8"))
-    assert baseline_payload["file_count"] == 6
+    assert baseline_payload["file_count"] == 3
     assert baseline_payload["game_version_id"] == "steam-b99000001"
     assert baseline_payload["backup_name"] == "fh6-steam-b99000001-baseline-current"
 
@@ -992,7 +989,7 @@ def test_full_project_flow_builds_baseline_and_deploys_to_mock(mock_game, full_p
     assert_cli_ok(build)
     assert (package_dir / "package" / "fh_radio_studio_package_manifest.json").exists()
     assert (package_dir / "package" / "media" / "audio" / "RadioInfo_CN.xml").exists()
-    assert (package_dir / "package" / "media" / "Stripped" / "StringTables" / "EN.zip").exists()
+    assert not (package_dir / "package" / "media" / "Stripped" / "StringTables" / "EN.zip").exists()
 
     deploy = run_cli(
         "deploy-package",
@@ -1014,9 +1011,9 @@ def test_full_project_flow_builds_baseline_and_deploys_to_mock(mock_game, full_p
     assert not deploy_manifest.exists()
     last_applied_payload = json.loads(last_applied.read_text(encoding="utf-8"))
     assert last_applied_payload["game_version_id"] == "steam-b99000001"
-    assert len(last_applied_payload["package_files"]) == 6
-    assert md5_file(target_table) == md5_file(chs_table)
-    assert mock_game.preferred_path.read_text(encoding="utf-8") == "EN"
+    assert len(last_applied_payload["package_files"]) == 2
+    assert md5_file(target_table) != md5_file(chs_table)
+    assert mock_game.preferred_path.read_text(encoding="utf-8") == "CHS"
 
     radio_info = mock_game.game_dir / "media" / "audio" / "RadioInfo_CN.xml"
     root = ET.parse(radio_info).getroot()
@@ -1225,7 +1222,7 @@ def test_baseline_bank_order_index_is_derived_and_used_for_build(mock_game, tmp_
     )
     assert_cli_ok(verify)
     integrity = json.loads(verify.stdout)["integrity"]
-    assert integrity["checked_files"] == 6
+    assert integrity["checked_files"] == 3
     assert integrity["unknown_files"] == 0
 
     bank_order_path.unlink()
@@ -1324,8 +1321,7 @@ def test_build_package_can_stage_language_change_without_playlist(mock_game, tmp
     assert len(payload["radios"]) == 1
     assert payload["radios"][0]["music"] == []
     assert payload["radios"][0]["assignments"] == []
-    assert payload["language"]["source_lang"] == "CHS"
-    assert payload["language"]["target_lang"] == "EN"
+    assert payload["language"] is None
     package_radio_info_cn = package_dir / "package" / "media" / "audio" / "RadioInfo_CN.xml"
     package_radio_info_en = package_dir / "package" / "media" / "audio" / "RadioInfo_EN.xml"
     package_bank = (
@@ -1334,14 +1330,11 @@ def test_build_package_can_stage_language_change_without_playlist(mock_game, tmp
     assert md5_file(package_radio_info_cn) == original_radio_info_cn_md5
     assert md5_file(package_radio_info_en) == original_radio_info_en_md5
     assert md5_file(package_bank) == original_bank_md5
-    assert (package_dir / "package" / "media" / "Stripped" / "StringTables" / "EN.zip").exists()
+    assert not (package_dir / "package" / "media" / "Stripped" / "StringTables" / "EN.zip").exists()
     assert {item["install_relative_path"] for item in payload["package_files"]} == {
         "media/audio/RadioInfo_CN.xml",
         "media/audio/RadioInfo_EN.xml",
         "media/audio/FMODBanks/R4_Tracks_CU1.assets.bank",
-        "media/Stripped/StringTables/CHS.zip",
-        "media/Stripped/StringTables/EN.zip",
-        "media/Stripped/StringTables/JP.zip",
     }
 
     deploy = run_cli(
@@ -1363,12 +1356,12 @@ def test_build_package_can_stage_language_change_without_playlist(mock_game, tmp
     )
     assert_cli_ok(deploy)
     last_applied_payload = json.loads(last_applied.read_text(encoding="utf-8"))
-    assert len(last_applied_payload["package_files"]) == 6
+    assert len(last_applied_payload["package_files"]) == 0
     assert md5_file(radio_info_cn) == original_radio_info_cn_md5
     assert md5_file(radio_info_en) == original_radio_info_en_md5
     assert md5_file(target_bank) == original_bank_md5
-    assert md5_file(target_table) == md5_file(chs_table)
-    assert mock_game.preferred_path.read_text(encoding="utf-8") == "EN"
+    assert md5_file(target_table) != md5_file(chs_table)
+    assert mock_game.preferred_path.read_text(encoding="utf-8") == "CHS"
 
 
 def test_build_package_uses_playlist_plan_for_multiple_radios(mock_game, tmp_path) -> None:

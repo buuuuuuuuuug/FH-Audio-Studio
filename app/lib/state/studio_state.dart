@@ -1359,8 +1359,9 @@ class StudioState {
     final projectSettings = hasProject
         ? FhRadioStudioProject.readSettings(projectDir)
         : const <String, dynamic>{};
-    final gameDir =
-        _objectString(projectSettings['game_dir']) ?? _defaultGameDir();
+    final gameDir = _preferredGameDir(
+      _objectString(projectSettings['game_dir']),
+    );
     final preferredPath =
         _objectString(projectSettings['preferred_path']) ?? '';
     final sourceLang =
@@ -1440,7 +1441,7 @@ class StudioState {
       packageBuildProgressSteps: const [],
       gameRunning: false,
       preferredLang: '未知',
-      languageReady: false,
+      languageReady: true,
       languageSummary: '$sourceLang 显示 · $targetLang 语音',
       sourceLanguageExists: false,
       targetLanguageExists: false,
@@ -1734,8 +1735,8 @@ class StudioState {
   bool get customSongEditingLocked =>
       toolchainWorkflowLocked || projectPathMigrationActive;
 
-  bool get languageSelectionMatchesGame =>
-      sourceLang == gameSourceLang && targetLang == gameTargetLang;
+  // Language selection no longer requires a language-file deployment.
+  bool get languageSelectionMatchesGame => true;
 
   PackageArtifactSummary? get languagePreparedPackage {
     final candidates = [pendingPackageSummary, lastPackageSummary];
@@ -2708,9 +2709,68 @@ double? _objectDouble(Object? value) {
   return null;
 }
 
+String _preferredGameDir(String? saved) {
+  if (saved != null && Directory(saved).existsSync()) return saved;
+  final detected = _defaultGameDir();
+  return detected.isNotEmpty ? detected : saved ?? '';
+}
+
 String _defaultGameDir() {
   if (Platform.isWindows) {
-    return r'C:\Program Files (x86)\Steam\steamapps\common\ForzaHorizon6';
+    final steamRoots = <String>{
+      r'C:\Program Files (x86)\Steam',
+      r'C:\Program Files\Steam',
+      if (Platform.environment['ProgramFiles(x86)'] case final String base)
+        p.join(base, 'Steam'),
+    };
+    try {
+      final query = Process.runSync('reg', [
+        'query',
+        r'HKCU\Software\Valve\Steam',
+        '/v',
+        'SteamPath',
+      ]);
+      final match = RegExp(r'REG_SZ\s+(.+)').firstMatch('${query.stdout}');
+      if (match != null) steamRoots.add(match.group(1)!.trim());
+    } catch (_) {}
+    final libraries = <String>{...steamRoots};
+    for (final steam in steamRoots) {
+      final file = File(p.join(steam, 'steamapps', 'libraryfolders.vdf'));
+      try {
+        if (file.existsSync()) {
+          for (final match in RegExp(
+            r'"path"\s*"([^"]+)"',
+          ).allMatches(file.readAsStringSync())) {
+            libraries.add(match.group(1)!.replaceAll(r'\\', r'\'));
+          }
+        }
+      } catch (_) {}
+    }
+    for (final drive in 'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('')) {
+      libraries.addAll([
+        '$drive:/SteamLibrary',
+        '$drive:/Steam',
+        '$drive:/Games/Steam',
+      ]);
+    }
+    for (final library in libraries) {
+      final common = Directory(p.join(library, 'steamapps', 'common'));
+      try {
+        if (!common.existsSync()) continue;
+        for (final dir in common.listSync().whereType<Directory>()) {
+          if (p
+                  .basename(dir.path)
+                  .toLowerCase()
+                  .replaceAll(' ', '')
+                  .contains('forzahorizon6') &&
+              (File(p.join(dir.path, 'ForzaHorizon6.exe')).existsSync() ||
+                  Directory(p.join(dir.path, 'media', 'audio')).existsSync())) {
+            return dir.path;
+          }
+        }
+      } catch (_) {}
+    }
+    return '';
   }
   return '';
 }
@@ -2766,8 +2826,9 @@ class StudioController extends StateNotifier<StudioState> {
     final pendingPackageDir = _latestPendingPackageDir(next);
     final musicPaths = _projectMusicPaths(next);
     final projectSettings = FhRadioStudioProject.readSettings(next);
-    final gameDir =
-        _objectString(projectSettings['game_dir']) ?? _defaultGameDir();
+    final gameDir = _preferredGameDir(
+      _objectString(projectSettings['game_dir']),
+    );
     final preferredPath =
         _objectString(projectSettings['preferred_path']) ?? '';
     final storedRadio = _objectInt(projectSettings['radio']) ?? state.radio;
@@ -2815,7 +2876,7 @@ class StudioController extends StateNotifier<StudioState> {
       gameTargetLang: targetLang,
       gameVersionId: null,
       availableLanguages: const [],
-      languageReady: false,
+      languageReady: true,
       languageSummary: '$sourceLang 显示 · $targetLang 语音',
       sourceLanguageExists: false,
       targetLanguageExists: false,
@@ -3392,7 +3453,7 @@ class StudioController extends StateNotifier<StudioState> {
         state.availableLanguages.contains(next);
     state = state.copyWith(
       sourceLang: next,
-      languageReady: false,
+      languageReady: true,
       languageSummary: '$next 显示 · ${state.targetLang} 语音',
       sourceLanguageExists: exists,
       targetMatchesSource:
@@ -3416,7 +3477,7 @@ class StudioController extends StateNotifier<StudioState> {
         state.availableLanguages.contains(next);
     state = state.copyWith(
       targetLang: next,
-      languageReady: false,
+      languageReady: true,
       languageSummary: '${state.sourceLang} 显示 · $next 语音',
       targetLanguageExists: exists,
       targetMatchesSource:
@@ -5038,13 +5099,7 @@ class StudioController extends StateNotifier<StudioState> {
         '--yes',
       ]);
       if (result.ok) {
-        state = state.copyWith(
-          lastPackageDir: null,
-          lastPackageSummary: null,
-          pendingPackageDir: null,
-          pendingPackageSummary: null,
-        );
-        _append('已用当前游戏文件覆写原始备份；准备包记录已清理。');
+        _append('原始备份已更新；播放列表、台呼、语音替换及准备包均已保留。写入前会重新校验游戏文件。');
         await _refreshIntegrityFromCli();
         rebuilt = true;
       }
@@ -6203,39 +6258,19 @@ class StudioController extends StateNotifier<StudioState> {
     final preferredDisplay = preferred == null || preferred.isEmpty
         ? '未设置'
         : preferred;
-    final sourceLang =
-        _asString(language?['source_lang'])?.toUpperCase() ?? state.sourceLang;
-    final targetLang =
-        _asString(language?['target_lang'])?.toUpperCase() ?? state.targetLang;
-    final sourceExists = _asBool(language?['source_exists']) ?? false;
-    final targetExists = _asBool(language?['target_exists']) ?? false;
-    final targetMatchesSource =
-        _asBool(language?['target_matches_source']) ?? false;
+    final sourceLang = _asString(language?['source_lang']) ?? state.sourceLang;
+    final targetLang = _asString(language?['target_lang']) ?? state.targetLang;
     final availableLanguages = _asStringList(language?['available']);
     final sourceBaseline = _asMap(language?['source_baseline']);
     final targetBaseline = _asMap(language?['target_baseline']);
-    final voiceSlotVerified =
-        _asBool(language?['voice_slot_verified']) ?? false;
+    const voiceSlotVerified = true;
     final previousSourceLang = state.sourceLang;
     final previousTargetLang = state.targetLang;
-    final hadLocalLanguageChange = !state.languageSelectionMatchesGame;
-    final nextSourceLang = hadLocalLanguageChange
-        ? state.sourceLang
-        : sourceLang;
-    final nextTargetLang = hadLocalLanguageChange
-        ? state.targetLang
-        : targetLang;
-    final nextPreferredMatches =
-        preferred != null && preferred.toUpperCase() == nextTargetLang;
-    final nextSourceExists = hadLocalLanguageChange
-        ? state.sourceLanguageExists
-        : sourceExists;
-    final nextTargetExists = hadLocalLanguageChange
-        ? state.targetLanguageExists
-        : targetExists;
-    final nextTargetMatchesSource = hadLocalLanguageChange
-        ? state.targetMatchesSource
-        : targetMatchesSource;
+    final nextSourceLang = sourceLang, nextTargetLang = targetLang;
+    const nextPreferredMatches = true,
+        nextSourceExists = true,
+        nextTargetExists = true,
+        nextTargetMatchesSource = true;
 
     state = state.copyWith(
       gameRunning: _asBool(payload['game_running']) ?? false,
@@ -6322,17 +6357,6 @@ class StudioController extends StateNotifier<StudioState> {
     return options;
   }
 
-  String _baselineStatusText(String status) {
-    return switch (status) {
-      'ok' => '原始备份已覆盖',
-      'backup_differs_from_current' => '原始备份完整，当前文件已变化',
-      'backup_missing' => '备份文件缺失',
-      'backup_changed' => '备份记录校验不一致',
-      'missing_entry' => '备份记录缺少该槽',
-      _ => '缺少原始备份',
-    };
-  }
-
   String _languageSummary({
     required String sourceLang,
     required String targetLang,
@@ -6344,26 +6368,7 @@ class StudioController extends StateNotifier<StudioState> {
     required bool voiceSlotVerified,
     required String targetBaselineStatus,
   }) {
-    if (!sourceExists || !targetExists) {
-      final missing = [
-        if (!sourceExists) '$sourceLang.zip',
-        if (!targetExists) '$targetLang.zip',
-      ].join('、');
-      return '缺少 $missing';
-    }
-    if (!voiceSlotVerified) {
-      return '语音槽未验证：${_baselineStatusText(targetBaselineStatus)}';
-    }
-    if (preferredMatches && targetMatchesSource) {
-      return '$sourceLang 显示 · $targetLang 语音';
-    }
-    if (!preferredMatches && !targetMatchesSource) {
-      return 'UserPreferredLang $preferredLang · 表单选择 $targetLang';
-    }
-    if (!preferredMatches) {
-      return 'UserPreferredLang $preferredLang · 表单选择 $targetLang';
-    }
-    return '$targetLang 槽尚未同步 $sourceLang 显示';
+    return '$sourceLang 显示 · $targetLang 语音（读取游戏设置）';
   }
 
   String? _radioSummary(Map<String, dynamic>? selected) {

@@ -236,6 +236,24 @@ def test_cleared_stinger_still_emits_a_labelled_restore_if_custom_audio_is_in_ga
     live = game / "media/audio/FMODBanks/R9_Stingers_JP.assets.bank"
     live.parent.mkdir(parents=True)
     live.write_bytes(b"previously-deployed-custom-audio")
+    # A real installation also has RadioInfo and an ownership record for our
+    # direct media write. Without those this is an unverified game update.
+    shutil.copy2(
+        project / ".fh-radio-studio/RadioInfo_JP.xml", game / "media/audio/RadioInfo_JP.xml"
+    )
+    from backend.fh_radio_studio_cli.common import md5_file
+
+    _write(
+        project / ".fh-radio-studio/last_applied_package_manifest.json",
+        {
+            "package_files": [
+                {
+                    "install_relative_path": "media/audio/FMODBanks/R9_Stingers_JP.assets.bank",
+                    "md5": md5_file(live),
+                },
+            ]
+        },
+    )
     args.game_dir = str(game)
     plan["assignments"] = {}
     _write(plan_path(project), plan)

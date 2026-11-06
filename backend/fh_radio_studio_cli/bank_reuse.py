@@ -178,7 +178,16 @@ def atomic_package_build(function):
 
     @wraps(function)
     def publish(args):
+        from .game import game_root_for, resolve_game_dir
+        from .game_update import audio_signature
         from .stingers import freeze_for_build
+
+        live_game = (
+            game_root_for(resolve_game_dir(args.game_dir))
+            if getattr(args, "game_dir", None)
+            else None
+        )
+        before_inputs = audio_signature(live_game) if live_game else None
 
         frozen_stingers = freeze_for_build(args)
         # General voices have their own package; song/stinger publishing stays separate.
@@ -225,6 +234,16 @@ def atomic_package_build(function):
                 finalize_changed_files(clone)
             if not (stage / "package/fh_radio_studio_package_manifest.json").is_file():
                 raise CliError("构建未生成完整准备包清单，已保留旧准备包")
+            from .game_update import stamp_package_inputs
+
+            if live_game and before_inputs != audio_signature(live_game):
+                raise CliError(
+                    "游戏音频文件在构建期间发生变化。已保留制作和旧准备包，请待游戏更新结束后重新构建。"
+                )
+            if getattr(args, "game_dir", None):
+                stamp_package_inputs(
+                    game_root_for(resolve_game_dir(args.game_dir)), stage / "package"
+                )
             mark_complete(target, stage)
             completed = True
             if getattr(args, "defer_publish", False):

@@ -145,7 +145,7 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
       expect(find.textContaining('1 条替换'), findsOneWidget);
-      await tester.tap(find.widgetWithText(RmButton, '撤销'));
+      await tester.tap(find.byKey(const ValueKey('editor-history-undo')));
       await tester.pumpAndSettle();
       expect(find.textContaining('0 条替换'), findsOneWidget);
       expect(tester.takeException(), isNull);

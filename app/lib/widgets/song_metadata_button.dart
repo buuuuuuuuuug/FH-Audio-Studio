@@ -14,7 +14,11 @@ class SongMetadataButton extends StatelessWidget {
     required this.artist,
     required this.onSave,
     this.enabled = true,
+    this.bpm,
+    this.onBpm,
   });
+  final double? bpm;
+  final ValueChanged<double>? onBpm;
   final String title;
   final String artist;
   final bool enabled;
@@ -27,8 +31,13 @@ class SongMetadataButton extends StatelessWidget {
         ? () => showDialog<void>(
             context: context,
             barrierColor: RmTokens.modalBackdrop,
-            builder: (_) =>
-                _MetadataDialog(title: title, artist: artist, onSave: onSave),
+            builder: (_) => _MetadataDialog(
+              title: title,
+              artist: artist,
+              onSave: onSave,
+              bpm: bpm,
+              onBpm: onBpm,
+            ),
           )
         : null,
   );
@@ -39,7 +48,11 @@ class _MetadataDialog extends StatefulWidget {
     required this.title,
     required this.artist,
     required this.onSave,
+    this.bpm,
+    this.onBpm,
   });
+  final double? bpm;
+  final ValueChanged<double>? onBpm;
   final String title;
   final String artist;
   final Future<bool> Function(String, String) onSave;
@@ -50,16 +63,26 @@ class _MetadataDialog extends StatefulWidget {
 class _MetadataDialogState extends State<_MetadataDialog> {
   late final _title = TextEditingController(text: widget.title);
   late final _artist = TextEditingController(text: widget.artist);
+  late final _bpm = TextEditingController(
+    text: widget.bpm?.toStringAsFixed(3) ?? '',
+  );
   bool _busy = false;
   String? _error;
   @override
   void dispose() {
     _title.dispose();
     _artist.dispose();
+    _bpm.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
+    final bpm = double.tryParse(_bpm.text.trim());
+    if (widget.bpm != null &&
+        (bpm == null || !bpm.isFinite || bpm < 20 || bpm > 400)) {
+      setState(() => _error = 'BPM 请输入 20–400 之间的数值');
+      return;
+    }
     final values = [_title.text.trim(), _artist.text.trim()];
     if (values.any(
       (s) =>
@@ -78,6 +101,7 @@ class _MetadataDialogState extends State<_MetadataDialog> {
       final ok = await widget.onSave(values[0], values[1]);
       if (!mounted) return;
       if (ok) {
+        if (bpm != null) widget.onBpm?.call(bpm);
         Navigator.of(context).pop();
         return;
       }
@@ -121,7 +145,24 @@ class _MetadataDialogState extends State<_MetadataDialog> {
             decoration: rmFieldDecoration(context, hint: '输入歌手'),
           ),
           const SizedBox(height: 16),
-          Text('重新构建并写入游戏后生效，音频文件和时间点保持不变。', style: RmText.body(color: rm.fg3)),
+          if (widget.bpm != null) ...[
+            Text('BPM · 每分钟节拍数', style: RmText.sans(12, color: rm.fg2)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _bpm,
+              enabled: !_busy,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              style: RmText.mono(14, color: rm.fg),
+              decoration: rmFieldDecoration(context, hint: '20–400'),
+            ),
+            const SizedBox(height: 16),
+          ],
+          Text(
+            '重新构建并写入游戏后生效，BPM 调整后请在歌曲页保存。音频文件和时间点保持不变。',
+            style: RmText.body(color: rm.fg3),
+          ),
           if (_error != null) ...[
             const SizedBox(height: 10),
             Text(_error!, style: TextStyle(color: rm.danger)),

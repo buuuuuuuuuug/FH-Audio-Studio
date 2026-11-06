@@ -1,10 +1,10 @@
 # FH Audio Studio
 
-**1.0 Preview** · 面向 **Forza Horizon 6 PC 版**的音乐与音频替换工作台。导入歌曲、调整播放与循环时间、编排电台，也能替换转场台呼及其他语音，试听确认后构建准备包并写入游戏。
+**1.0 Preview 2** · 面向 **Forza Horizon 6 PC 版**的音乐与音频替换工作台。导入歌曲、调整播放与循环时间、编排电台，也能替换转场台呼及其他语音，使用 GPT-SoVITS 生成新语音，试听确认后构建准备包并写入游戏。
 
-基于 [FH Radio Studio](https://github.com/Pzzzzz5142/FH-Radio-Studio) 持续改进，集成 [SeamlessLoopMusic](https://github.com/CPUrising/seamless-loop-music) 循环建议。当前主版本已整合歌曲、电台台呼和语音替换工作流。
+基于 [FH Radio Studio](https://github.com/Pzzzzz5142/FH-Radio-Studio) 持续改进，集成 [SeamlessLoopMusic](https://github.com/CPUrising/seamless-loop-music) 循环建议。当前主版本已整合歌曲、电台台呼、语音替换和语音生成工作流。
 
-**[下载与版本说明](https://github.com/buuuuuuuuuug/FH-Audio-Studio/releases) · [详细功能说明](docs/改动说明-详细版.md) · [本次更新](docs/releases/v1.0.0-preview.1.md)**
+**[下载与版本说明](https://github.com/buuuuuuuuuug/FH-Audio-Studio/releases) · [功能介绍](docs/Feature_Introduction.md) · [本次更新](docs/releases/v1.0.0-preview.2.md)**
 
 ## 核心功能
 
@@ -14,16 +14,17 @@
 | 循环分析与人工精修 | 提供 SeamlessLoopMusic 循环建议和可选 AI 分析，支持波形编辑、节拍磁吸、毫秒微调及切入／循环试听。 |
 | 台呼与歌曲转场 | 替换原有台呼，裁剪音频、调整音量与下一首进入位置，试听前后歌曲衔接，与歌曲一起构建。 |
 | 游戏语音替换 | 按类别和语言浏览资源，也可自选文件；备份解析后逐条替换，对照原音、替换音频与对应文本。 |
+| GPT-SoVITS 语音生成 | 管理模型、主／辅助参考音频及声音预设，支持批量生成、重试、试听与编辑，也可直接为语音条目生成替换。 |
 | 素材管理与音频编辑 | 按文件夹管理素材，支持台呼裁剪、插入静音、选区静音／删除、音量调整和撤销重做，保留原素材。 |
 | 批量操作与导入导出 | 搜索筛选、多选分配、批量分析、时间点导入导出，以及语音文本 TXT／CSV／XLSX 导出与实时预览。 |
 
-电台扩容和分场景编排为实验功能，分场景编排需要先开启扩容。
+语音生成、电台扩容和分场景编排为实验功能，分场景编排需要先开启扩容。
 
 ## 工具特色
 
 - **构建与写入**：编辑、试听、构建和写入在工具内完成；支持音量预览、写入清单、按文件选择及原文件备份与恢复。
-- **便携运行**：Windows 包附带基础 Python 环境和核心音频工具；无 AI 模式也可使用 SeamlessLoopMusic 循环建议，AI 依赖按需准备。
-- **操作与引导**：统一波形和播放操作，支持拖放、多选及快捷键；首次进入提供功能介绍，右上角问号可随时重看。
+- **便携运行**：Windows 包附带基础 Python 环境和核心音频工具；无 AI 模式也可使用 SeamlessLoopMusic 循环建议，AI 分析与 GPT-SoVITS 推理环境按需安装。
+- **操作与引导**：统一波形和播放操作，支持拖放、多选及快捷键；首次使用提供功能介绍，右上角问号可随时重看。
 
 ## 界面与功能
 
@@ -31,7 +32,7 @@
 
 ![基础设置](docs/images/studio/settings.png)
 
-选择游戏目录、显示语言和语音语言，按需使用手动或 AI 分析。**推荐启用 SeamlessLoopMusic**：更关注循环前后的音高与响度衔接，无 AI 模式也能使用，无需加载重型模型。循环同步、扩容和分场景编辑可分别配置。
+选择游戏目录、显示语言和语音语言，按需使用手动或 AI 分析。**推荐启用 SeamlessLoopMusic**：更关注循环前后的音高与响度衔接，无 AI 模式也能使用，无需加载重型模型。循环同步和电台扩容可分别配置；分场景编辑位于播放列表，语音生成开关位于设置的功能区。
 
 ### 自建歌曲
 
@@ -71,29 +72,35 @@
 
 ### 语音替换
 
-![语音替换](docs/images/studio/voices.png)
+![语音替换](docs/images/studio/speech-replacement.png)
 
-按分类与语言查找游戏音频，也可自选文件；备份解析后，对照原音、文本和替换素材逐条操作。文本列跟随显示／语音语言，支持搜索、复制及 TXT、CSV、XLSX 导出。语音准备包单独构建、单独写入。
+按分类与语言查找游戏音频，也可自选文件；备份解析后，对照原音、文本和替换素材逐条操作。文本列跟随显示／语音语言，支持搜索、复制及 TXT、CSV、XLSX 导出。可在当前页面输入文本生成语音，并继续试听与编辑。语音准备包单独构建、单独写入。
 
-### 语音素材编辑
+### 语音生成
 
-![语音素材编辑](docs/images/studio/voice-material.png)
+![语音生成](docs/images/studio/speech-studio.png)
 
-双击素材进入波形编辑，左键定位播放、右键拖出选区；可插入静音、静音或删除选区，调整音量并撤销重做。保留原始素材，支持文件夹管理、多选、拖入导入和已使用状态提示。
+左侧配置模型、主／辅助参考音频、语言与推理参数，保存为声音预设；右侧输入文本，支持批量生成和重试。结果可展开波形编辑、加入素材池或导出，生成状态和草稿在切页后保留。
+
+### 推理引擎安装与配置
+
+![推理引擎安装与配置](docs/images/studio/speech-engine.png)
+
+安装独立的 GPT-SoVITS 推理环境，或连接已有同机 API。提供下载源选择、安装进度、暂停继续、手动准备与控制台输出；API 状态和声音配置分别检查。安装及配置方法见 [GPT-SoVITS 使用说明](docs/gpt-sovits.md)。
 
 ### 时间点导入导出
 
-通过表格文本或文件批量交换时间点，先预览匹配与错误再应用；导入前自动备份。具体格式和匹配规则见[详细说明](docs/改动说明-详细版.md#时间点导入导出)。
+通过表格文本或文件批量交换时间点，先预览匹配与错误再应用；导入前自动备份。具体格式和匹配规则见[详细说明](docs/Feature_Introduction.md#时间点导入导出)。
 
 ## 开始使用
 
 1. 完整解压 Windows 便携包，运行 `fh-radio-studio.exe`；新工程路径使用英文、数字或常用英文符号。
-2. 在概览选择游戏与语言，检查环境并建立原始备份。
+2. 在概览确认游戏目录及识别到的显示／语音语言，检查环境并建立原始备份。
 3. 导入、编辑和分配音频，保存后构建准备包，核对写入清单再写入游戏。
 
 歌曲与台呼共用准备包，语音替换使用独立准备包。**构建本身不会写入游戏。** 写入前退出游戏；游戏更新后重新检查兼容性。升级建议先解压到新目录，再打开已有工程。
 
-主要使用和验证平台为 **Windows x64**。AI 依赖可按需准备；可先使用“无 AI＋SeamlessLoopMusic”。扩容和分场景编辑仍是实验功能，语音实际播放长度与触发效果也受游戏事件控制。
+主要使用和验证平台为 **Windows x64**。AI 依赖可按需准备；可先使用“无 AI＋SeamlessLoopMusic”。语音生成、扩容和分场景编辑仍是实验功能，语音实际播放长度与触发效果也受游戏事件控制。
 
 ## 项目说明与反馈
 
@@ -103,4 +110,16 @@
 
 原项目与第三方组件的贡献归各自作者所有，本 Fork 的开发说明不代表原作者。项目与游戏官方无隶属关系，音频、工具和模型遵循各自适用的授权。
 
-[来源与分发说明](docs/third-party-notices.md) · [开发说明](docs/development.md) · [详细功能说明](docs/改动说明-详细版.md)
+[来源与分发说明](docs/third-party-notices.md) · [开发说明](docs/development.md) · [功能介绍](docs/Feature_Introduction.md)
+
+## 致谢
+
+感谢以下项目及其作者的贡献：
+
+- [FH Radio Studio](https://github.com/Pzzzzz5142/FH-Radio-Studio)：本项目的基础，保留原有工程、歌曲分析、构建与写入工作流。
+- [SeamlessLoopMusic](https://github.com/CPUrising/seamless-loop-music)：提供原生循环查找引擎与循环建议。
+- [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)：提供语音生成推理引擎与 API。
+- [GAG（GPT-SoVITS-Api-GUI）](https://github.com/AliceNavigator/GPT-SoVITS-Api-GUI)：语音生成界面与操作流程的参考。
+- [FFmpeg](https://ffmpeg.org/) 和 [vgmstream](https://github.com/vgmstream/vgmstream)：提供音频转换、解码等基础能力。
+
+也感谢 Flutter、media-kit、Python、uv 及其他依赖项目。各项目的代码、模型与工具遵循各自授权，来源及分发材料见 [来源与分发说明](docs/third-party-notices.md)。

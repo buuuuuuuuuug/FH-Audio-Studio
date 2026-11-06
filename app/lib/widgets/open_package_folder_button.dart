@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../core/open_directory.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../theme/app_theme.dart';
@@ -6,17 +7,7 @@ import 'rm_button.dart';
 import 'rm_icon.dart';
 
 final packageFolderOpenerProvider = Provider<Future<void> Function(String)>(
-  (ref) => (path) async {
-    final executable = Platform.isWindows
-        ? 'explorer'
-        : Platform.isMacOS
-        ? 'open'
-        : Platform.isLinux
-        ? 'xdg-open'
-        : null;
-    if (executable == null) throw UnsupportedError('当前平台不支持打开文件夹');
-    await Process.start(executable, [path]);
-  },
+  (ref) => openDirectory,
 );
 
 class OpenPackageFolderButton extends ConsumerWidget {

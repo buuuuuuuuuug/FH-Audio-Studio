@@ -55,7 +55,7 @@ def normalize_preferred_language(lang: str) -> str:
 def read_user_preferred_lang(path: Path) -> Optional[str]:
     if not path.exists():
         return None
-    return path.read_text(encoding="utf-8", errors="replace").strip()
+    return path.read_text(encoding="utf-8-sig", errors="replace").strip()
 
 
 def write_user_preferred_lang(path: Path, lang: str) -> None:

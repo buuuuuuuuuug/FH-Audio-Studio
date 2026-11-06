@@ -5,11 +5,15 @@ import json
 from pathlib import Path
 from test.test_stinger_bank import bank
 from test.test_voice_text_index import resources
+from types import SimpleNamespace
 from zipfile import ZipFile
 
+import pytest
+
+from backend.fh_radio_studio_cli.common import CliError
 from backend.fh_radio_studio_cli.voice_text import attach_dialogue, dialogue_stamp
 from backend.fh_radio_studio_cli.voice_workspace import cached_catalogs, export_text
-from backend.fh_radio_studio_cli.voices import load_plan, prepare
+from backend.fh_radio_studio_cli.voices import load_plan, original, prepare, scan
 
 
 def setup_resource(tmp_path):
@@ -31,6 +35,61 @@ def setup_resource(tmp_path):
     return project, game, source
 
 
+def test_language_change_selects_matching_audio_not_just_subtitles(tmp_path):
+    project, game, japanese = setup_resource(tmp_path)
+    chinese = japanese.with_name("VO_Test_CN.assets.bank")
+    chinese.write_bytes(bank(["voice_CN"]))
+    jp = prepare(project, game, japanese)
+    cn = prepare(project, game, chinese)
+    result = scan(
+        project,
+        game,
+        selected_path=cn["bank"]["relative_path"],
+        follow_voice_language=True,
+        voice_language="JP",
+        display_language="CHS",
+    )
+    assert result["selected_file"]["name"] == japanese.name
+    assert result["active"]["bank"]["id"] == jp["bank"]["id"]
+    assert result["active"]["entries"][0]["name"] == "voice_JP"
+
+
+def test_original_audition_maps_sound_identity_instead_of_reusing_chinese_index(
+    tmp_path, monkeypatch
+):
+    project, game, japanese = setup_resource(tmp_path)
+    chinese = japanese.with_name("VO_Test_CN.assets.bank")
+    chinese.write_bytes(bank(["other_CN", "voice_CN"]))
+    jp = prepare(project, game, japanese)
+    cn = prepare(project, game, chinese)
+    calls = []
+
+    def decode(command):
+        calls.append(command)
+        Path(command[command.index("-o") + 1]).write_bytes(b"japanese decoded audio")
+
+    monkeypatch.setattr("backend.fh_radio_studio_cli.voices._run", decode)
+    monkeypatch.setattr("backend.fh_radio_studio_cli.voices._tool", lambda *a: "decoder")
+    result = original(
+        SimpleNamespace(game_dir=str(game)), project, cn["bank"]["id"], 1, voice_language="JP"
+    )
+    assert result["bank_id"] == jp["bank"]["id"]
+    assert result["index"] == 0
+    assert calls[0][calls[0].index("-s") + 1] == 1
+    assert result["voice_language"] == "JP"
+
+
+def test_original_audition_never_falls_back_to_chinese_or_guessing_by_index(tmp_path, monkeypatch):
+    project, game, japanese = setup_resource(tmp_path)
+    chinese = japanese.with_name("VO_Test_CN.assets.bank")
+    chinese.write_bytes(bank(["missing_CN"]))
+    cn = prepare(project, game, chinese)
+    with pytest.raises(CliError, match="唯一 JP 原音"):
+        original(
+            SimpleNamespace(game_dir=str(game)), project, cn["bank"]["id"], 0, voice_language="JP"
+        )
+
+
 def test_requested_text_languages_do_not_change_bank_hash_matching(tmp_path):
     project, game, source = setup_resource(tmp_path)
     parsed = prepare(project, game, source, voice_language="EN", display_language="DE")
@@ -39,6 +98,53 @@ def test_requested_text_languages_do_not_change_bank_hash_matching(tmp_path):
     assert entry["translation"] == "Bestätigen"
     assert entry["name"] == "voice_JP"
     assert (entry["content_language"], entry["translation_language"]) == ("EN", "DE")
+
+
+def test_original_audition_ignores_installed_override_and_keeps_edit_plan(tmp_path, monkeypatch):
+    project, game, pristine = setup_resource(tmp_path)
+    pristine.write_bytes(bank(["voice_JP", "other_JP"]))
+    override = game / "mediapc/audio/FMODBanks" / pristine.name
+    override.parent.mkdir(parents=True)
+    override.write_bytes(bank(["other_JP", "voice_JP"]))
+    parsed = prepare(project, game, override)
+    before = (project / ".fh-radio-studio/voices.json").read_bytes()
+    stale = project / f"analysis/voices/original/{parsed['bank']['sha256']}/2.wav"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(b"old replacement audition")
+    calls = []
+
+    def decode(command):
+        calls.append(command)
+        assert Path(command[-1]).read_bytes() == pristine.read_bytes()
+        Path(command[command.index("-o") + 1]).write_bytes(b"pristine audition")
+
+    monkeypatch.setattr("backend.fh_radio_studio_cli.voices._run", decode)
+    monkeypatch.setattr("backend.fh_radio_studio_cli.voices._tool", lambda *a: "decoder")
+    result = original(
+        SimpleNamespace(game_dir=str(game)), project, parsed["bank"]["id"], 1, voice_language="JP"
+    )
+    assert result["index"] == 0
+    assert result["source_kind"] == "game-original"
+    assert Path(result["path"]).read_bytes() == b"pristine audition"
+    assert calls[0][calls[0].index("-s") + 1] == 1
+    assert stale.read_bytes() == b"old replacement audition"
+    assert (project / ".fh-radio-studio/voices.json").read_bytes() == before
+
+
+def test_original_audition_does_not_guess_when_pristine_sound_is_missing(tmp_path):
+    project, game, pristine = setup_resource(tmp_path)
+    override = game / "mediapc/audio/FMODBanks" / pristine.name
+    override.parent.mkdir(parents=True)
+    override.write_bytes(bank(["replacement_only_JP"]))
+    parsed = prepare(project, game, override)
+    with pytest.raises(CliError, match="未使用覆盖文件或按序号猜测"):
+        original(
+            SimpleNamespace(game_dir=str(game)),
+            project,
+            parsed["bank"]["id"],
+            0,
+            voice_language="JP",
+        )
 
 
 def test_switching_languages_refreshes_saved_catalog_and_preserves_audio_edits(tmp_path):

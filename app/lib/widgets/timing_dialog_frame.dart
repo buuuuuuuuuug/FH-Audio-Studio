@@ -54,9 +54,9 @@ class TimingDialogFrame extends StatelessWidget {
     this.closeKey,
     this.footer,
     this.headerActions = const [],
-    this.showCloseHint = true,
     this.editorStyle = false,
     this.bodyPadding = const EdgeInsets.all(20),
+    this.onClose,
   });
   final String title;
   final bool busy;
@@ -68,14 +68,20 @@ class TimingDialogFrame extends StatelessWidget {
   final Key? closeKey;
   final Widget? footer;
   final List<Widget> headerActions;
-  final bool showCloseHint;
   final bool editorStyle;
   final EdgeInsetsGeometry bodyPadding;
+  final VoidCallback? onClose;
   @override
   Widget build(BuildContext context) {
     final rm = context.rm;
     void close() {
-      if (!busy) Navigator.of(context).pop();
+      if (!busy) {
+        if (onClose != null) {
+          onClose!();
+        } else {
+          Navigator.of(context).pop();
+        }
+      }
     }
 
     return Theme(
@@ -87,7 +93,10 @@ class TimingDialogFrame extends StatelessWidget {
         ),
       ),
       child: PopScope(
-        canPop: !busy,
+        canPop: !busy && onClose == null,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && !busy) onClose?.call();
+        },
         child: CallbackShortcuts(
           bindings: {const SingleActivator(LogicalKeyboardKey.escape): close},
           child: Focus(
@@ -172,12 +181,6 @@ class TimingDialogFrame extends StatelessWidget {
                                 const SizedBox(width: 6),
                               ],
                             ],
-                            if (showCloseHint)
-                              Text(
-                                busy ? '正在处理…' : 'Esc 关闭',
-                                style: RmText.mono(10.5, color: rm.fg3),
-                              ),
-                            if (showCloseHint) const SizedBox(width: 10),
                             RmButton.icon(
                               key: closeKey,
                               onPressed: busy ? null : close,
