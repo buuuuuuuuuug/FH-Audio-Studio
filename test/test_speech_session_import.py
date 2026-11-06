@@ -1,8 +1,10 @@
+import os
 import socket
 from pathlib import Path
 from test.test_speech_installer_revision import wait_for
 
 import numpy as np
+import pytest
 import soundfile as sf
 
 from backend.fh_radio_studio_cli.speech_generation import Engine, GenerationWorkspace
@@ -36,6 +38,12 @@ def test_imports_models_and_reference_immediately_without_a_preset(tmp_path):
     assert imported["filename"] == "Original.ckpt"
     assert (engine.home / imported["path"]).name.startswith("Original_")
     assert engine.settings()["presets"] == []
+    tools = os.environ.get("FH_RADIO_STUDIO_AUDIO_TOOLS_DIR")
+    if (
+        not tools
+        or not (Path(tools) / "ffmpeg" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")).is_file()
+    ):
+        pytest.skip("requires the bundled audio tools for real PCM integration")
     ref = tmp_path / "Original reference.wav"
     sf.write(ref, np.zeros(24000 * 4), 24000)
     imported = engine.import_file("ref_audio_path", str(ref))

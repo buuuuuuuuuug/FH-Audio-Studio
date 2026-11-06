@@ -443,16 +443,13 @@ def test_generated_audio_edits_reuse_material_renderer_and_adopt_only_edited_fil
     workspace, monkeypatch, tmp_path
 ):
     import os
-    import shutil
 
     from backend.fh_radio_studio_cli.stingers import digest, local_file
 
     tools = os.environ.get("FH_RADIO_STUDIO_AUDIO_TOOLS_DIR")
-    executable = (
-        Path(tools) / "ffmpeg/ffmpeg.exe"
-        if tools
-        else Path(shutil.which("ffmpeg") or "missing-ffmpeg")
-    )
+    if not tools:
+        pytest.skip("requires the bundled audio tools for real PCM integration")
+    executable = Path(tools) / "ffmpeg" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
     if not executable.is_file():
         pytest.skip("requires the bundled audio tools for real PCM integration")
     monkeypatch.setenv("FH_RADIO_STUDIO_AUDIO_TOOLS_DIR", str(executable.parent.parent))
