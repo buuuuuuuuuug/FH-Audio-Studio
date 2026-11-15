@@ -331,6 +331,8 @@ Fix: Resolve uv through UvRuntime's bundled release path first and preserve the 
 
 ## Release Build
 
+CI and release jobs use Flutter `3.47.6`, matching the SDK used for local release validation. Update both workflows together with local validation when changing SDK versions; following only the stable channel can introduce analyzer and API changes between runs.
+
 Build a Windows release package from the repository root:
 
 ```powershell
