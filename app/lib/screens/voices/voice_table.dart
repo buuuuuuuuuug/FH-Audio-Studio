@@ -378,8 +378,10 @@ extension _VoiceTable on _VoiceReplacementState {
                                 ),
                                 child: SpeechGenerationPanel(
                                   featureTour: true,
+                                  conversion: _conversionMode,
                                   key: ValueKey(
-                                    jsonEncode(
+                                    jsonEncode([
+                                      _conversionMode,
                                       generation
                                           .map(
                                             (e) => [
@@ -389,9 +391,11 @@ extension _VoiceTable on _VoiceReplacementState {
                                             ],
                                           )
                                           .toList(),
-                                    ),
+                                    ]),
                                   ),
-                                  session: _speechSession(),
+                                  session: _conversionMode
+                                      ? _rvcSession()
+                                      : _speechSession(),
                                   targetSnapshot: _generationTargetSnapshot,
                                   onUnapply: _unapplyGenerated,
                                   entries: generation,

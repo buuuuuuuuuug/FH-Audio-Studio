@@ -1,3 +1,5 @@
+import 'waveform_grid.dart';
+export 'waveform_grid.dart' show WaveformTimeGrid;
 import 'package:flutter/services.dart';
 import 'editor_timecode.dart';
 import '../../widgets/waveform_zoom_gesture.dart';
@@ -60,7 +62,7 @@ class ManualFocusWaveform extends StatefulWidget {
     this.onSelection,
     this.selectionStart,
     this.selectionEnd,
-    this.timeGrid = false,
+    this.timeGrid = true,
     this.showTimeAxis = true,
   });
 
@@ -398,7 +400,7 @@ class _FocusWavePainter extends CustomPainter {
     required this.barsHeight,
     required this.windowStart,
     required this.windowEnd,
-    this.timeGrid = false,
+    this.timeGrid = true,
     this.selectionStart,
     this.selectionEnd,
   });
@@ -424,6 +426,18 @@ class _FocusWavePainter extends CustomPainter {
     final width = size.width;
     canvas.clipRect(Offset.zero & size);
     final centerY = topPad + barsHeight / 2;
+    if (timeGrid || beats.isEmpty) {
+      paintWaveformGrid(
+        canvas,
+        rm: rm,
+        width: width,
+        start: windowStart,
+        end: windowEnd,
+        top: topPad,
+        height: barsHeight,
+      );
+    }
+
     if (selectionStart != null && selectionEnd != null) {
       canvas.drawRect(
         Rect.fromLTRB(
@@ -434,26 +448,6 @@ class _FocusWavePainter extends CustomPainter {
         ),
         Paint()..color = accent.withAlpha(35),
       );
-    }
-    if (timeGrid) {
-      final step = WaveformTimeGrid(windowEnd - windowStart, width).minorStep;
-      for (
-        var i = (windowStart / step).ceil();
-        i * step <= windowEnd + .000001;
-        i++
-      ) {
-        final major = i % 5 == 0;
-        final x = _x(i * step, width);
-        canvas.drawLine(
-          Offset(x, topPad),
-          Offset(x, topPad + barsHeight),
-          Paint()
-            ..color = major
-                ? rm.borderStrong.withAlpha(145)
-                : rm.border.withAlpha(125)
-            ..strokeWidth = major ? 1 : .5,
-        );
-      }
     }
 
     // 循环阴影带（A→B）
@@ -535,24 +529,4 @@ class _FocusWavePainter extends CustomPainter {
       old.selectionEnd != selectionEnd ||
       old.rm != rm ||
       old.barsHeight != barsHeight;
-}
-
-class WaveformTimeGrid {
-  WaveformTimeGrid(double span, double width) {
-    final pixelsPerSecond = math.max(1, width) / math.max(.00001, span);
-    var minor = .1;
-    while (minor * pixelsPerSecond < 6) {
-      minor *= 10;
-    }
-    while (minor * pixelsPerSecond > 60 && minor > .00001) {
-      minor /= 10;
-    }
-    minorStep = minor;
-    var label = minor * 5;
-    while (label * pixelsPerSecond < 80) {
-      label *= 2;
-    }
-    labelStep = label;
-  }
-  late final double minorStep, labelStep;
 }

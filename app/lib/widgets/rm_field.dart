@@ -27,6 +27,7 @@ InputDecoration rmFieldDecoration(
     contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
     border: border(rm.border),
     enabledBorder: border(rm.border),
+    disabledBorder: border(rm.border.withValues(alpha: .45)),
     focusedBorder: border(rm.accent.base),
     errorBorder: border(rm.danger),
     focusedErrorBorder: border(rm.danger),

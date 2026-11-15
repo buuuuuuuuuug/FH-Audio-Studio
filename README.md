@@ -1,10 +1,10 @@
 # FH Audio Studio
 
-**1.0 Preview 2** · 面向 **Forza Horizon 6 PC 版**的音乐与音频替换工作台。导入歌曲、调整播放与循环时间、编排电台，也能替换转场台呼及其他语音，使用 GPT-SoVITS 生成新语音，试听确认后构建准备包并写入游戏。
+**1.0 Preview 3** · 面向 **Forza Horizon 6 PC 版**的音乐与音频替换工作台。导入歌曲、调整播放与循环时间、编排电台，也能替换转场台呼及其他语音，使用 GPT-SoVITS 生成语音或通过 RVC 转换音色，试听确认后构建准备包并写入游戏。
 
 基于 [FH Radio Studio](https://github.com/Pzzzzz5142/FH-Radio-Studio) 持续改进，集成 [SeamlessLoopMusic](https://github.com/CPUrising/seamless-loop-music) 循环建议。当前主版本已整合歌曲、电台台呼、语音替换和语音生成工作流。
 
-**[下载与版本说明](https://github.com/buuuuuuuuuug/FH-Audio-Studio/releases) · [功能介绍](docs/Feature_Introduction.md) · [本次更新](docs/releases/v1.0.0-preview.2.md)**
+**[下载与版本说明](https://github.com/buuuuuuuuuug/FH-Audio-Studio/releases) · [功能介绍](docs/Feature_Introduction.md) · [本次更新](docs/releases/v1.0.0-preview.3.md)**
 
 ## 核心功能
 
@@ -15,6 +15,7 @@
 | 台呼与歌曲转场 | 替换原有台呼，裁剪音频、调整音量与下一首进入位置，试听前后歌曲衔接，与歌曲一起构建。 |
 | 游戏语音替换 | 按类别和语言浏览资源，也可自选文件；备份解析后逐条替换，对照原音、替换音频与对应文本。 |
 | GPT-SoVITS 语音生成 | 管理模型、主／辅助参考音频及声音预设，支持批量生成、重试、试听与编辑，也可直接为语音条目生成替换。 |
+| RVC 音色转换 | 将已有录音或游戏原音转换为目标音色，支持可选索引、CPU／CUDA、音色预设、批量转换与替换草稿。 |
 | 素材管理与音频编辑 | 按文件夹管理素材，支持台呼裁剪、插入静音、选区静音／删除、音量调整和撤销重做，保留原素材。 |
 | 批量操作与导入导出 | 搜索筛选、多选分配、批量分析、时间点导入导出，以及语音文本 TXT／CSV／XLSX 导出与实时预览。 |
 
@@ -23,7 +24,7 @@
 ## 工具特色
 
 - **构建与写入**：编辑、试听、构建和写入在工具内完成；支持音量预览、写入清单、按文件选择及原文件备份与恢复。
-- **便携运行**：Windows 包附带基础 Python 环境和核心音频工具；无 AI 模式也可使用 SeamlessLoopMusic 循环建议，AI 分析与 GPT-SoVITS 推理环境按需安装。
+- **便携运行**：Windows 包附带基础 Python 环境和核心音频工具；无 AI 模式也可使用 SeamlessLoopMusic 循环建议，AI 分析、GPT-SoVITS 与 RVC 推理环境按需安装。
 - **操作与引导**：统一波形和播放操作，支持拖放、多选及快捷键；首次使用提供功能介绍，右上角问号可随时重看。
 
 ## 界面与功能
@@ -88,6 +89,14 @@
 
 安装独立的 GPT-SoVITS 推理环境，或连接已有同机 API。提供下载源选择、安装进度、暂停继续、手动准备与控制台输出；API 状态和声音配置分别检查。安装及配置方法见 [GPT-SoVITS 使用说明](docs/gpt-sovits.md)。
 
+### RVC 音色转换
+
+![RVC 首次使用引导](docs/images/studio/rvc-setup.png)
+
+语音生成页面右上角可切换 GPT-SoVITS／RVC：前者根据文字生成语音，后者转换已有录音的音色，共用试听、编辑和素材管理。
+
+首次使用 RVC 会显示安装引导；安装完成后，左侧选择音色、索引、设备和转换参数，右侧导入录音转换。语音替换页也能直接转换游戏原音，支持多选批量处理。声音预设可保存模型、索引、设备和参数，修改时显示未保存标记；参数旁提供悬浮说明。安装与操作见 [RVC 使用说明](docs/rvc.md)。
+
 ### 时间点导入导出
 
 通过表格文本或文件批量交换时间点，先预览匹配与错误再应用；导入前自动备份。具体格式和匹配规则见[详细说明](docs/Feature_Introduction.md#时间点导入导出)。
@@ -97,6 +106,8 @@
 1. 完整解压 Windows 便携包，运行 `fh-radio-studio.exe`；新工程路径使用英文、数字或常用英文符号。
 2. 在概览确认游戏目录及识别到的显示／语音语言，检查环境并建立原始备份。
 3. 导入、编辑和分配音频，保存后构建准备包，核对写入清单再写入游戏。
+
+使用语音功能时，在“语音生成”切换 GPT-SoVITS 或 RVC，按首次使用引导安装对应引擎，再导入声音模型。两种引擎独立安装；入口可在设置的功能区关闭。
 
 歌曲与台呼共用准备包，语音替换使用独立准备包。**构建本身不会写入游戏。** 写入前退出游戏；游戏更新后重新检查兼容性。升级建议先解压到新目录，再打开已有工程。
 
@@ -120,6 +131,7 @@
 - [SeamlessLoopMusic](https://github.com/CPUrising/seamless-loop-music)：提供原生循环查找引擎与循环建议。
 - [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)：提供语音生成推理引擎与 API。
 - [GAG（GPT-SoVITS-Api-GUI）](https://github.com/AliceNavigator/GPT-SoVITS-Api-GUI)：语音生成界面与操作流程的参考。
+- [RVC-Fabric](https://github.com/Turing-Mirror/RVC-Fabric) 与 [RVC Project](https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI)：RVC 推理实现、参数说明和交互流程的参考。
 - [FFmpeg](https://ffmpeg.org/) 和 [vgmstream](https://github.com/vgmstream/vgmstream)：提供音频转换、解码等基础能力。
 
 也感谢 Flutter、media-kit、Python、uv 及其他依赖项目。各项目的代码、模型与工具遵循各自授权，来源及分发材料见 [来源与分发说明](docs/third-party-notices.md)。

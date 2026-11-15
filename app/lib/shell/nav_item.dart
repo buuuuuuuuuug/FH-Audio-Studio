@@ -99,7 +99,10 @@ class _NavItemState extends State<NavItem> {
                   ? EdgeInsets.symmetric(
                       horizontal: widget.trailing == null ? 10 : 0,
                     )
-                  : const EdgeInsets.symmetric(horizontal: 13),
+                  : EdgeInsets.only(
+                      left: 13,
+                      right: widget.trailing == null ? 13 : 0,
+                    ),
               decoration: BoxDecoration(
                 color: bg,
                 borderRadius: BorderRadius.circular(RmTokens.rSm),

@@ -6,6 +6,7 @@ import '../../domain/waveform_envelope.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import 'group_colors.dart';
+import 'waveform_grid.dart';
 
 /// 波形主区 painter — 一次画完：
 /// 1. loop shades（TL/PL 矩形）
@@ -72,9 +73,18 @@ class WaveformPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (duration <= 0 || bars.values.isEmpty) return;
     final width = size.width;
     canvas.clipRect(Offset.zero & size);
+    paintWaveformGrid(
+      canvas,
+      rm: rm,
+      width: width,
+      start: windowStart,
+      end: windowEnd ?? (duration > 0 ? duration : 1),
+      top: flagPad,
+      height: barsHeight,
+    );
+    if (duration <= 0 || bars.values.isEmpty) return;
 
     // ------------------------------------------------------------
     // Loop shades — drawn behind bars

@@ -16,8 +16,14 @@ import '../../widgets/rm_tooltip.dart';
 import '../../widgets/timing_dialog_frame.dart';
 
 class SpeechApiStatus extends StatelessWidget {
-  const SpeechApiStatus({super.key, required this.session, this.onPressed});
+  const SpeechApiStatus({
+    super.key,
+    required this.session,
+    this.onPressed,
+    this.conversion = false,
+  });
   final SpeechGenerationSession session;
+  final bool conversion;
   final VoidCallback? onPressed;
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -46,7 +52,17 @@ class SpeechApiStatus extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           onTap: onPressed ?? () => showSpeechEngineDialog(context, session),
           child: RmChip(
-            label: label,
+            label: conversion
+                ? (session.apiReady
+                      ? 'RVC 可用'
+                      : starting
+                      ? 'RVC 加载中'
+                      : state == 'error'
+                      ? 'RVC 异常'
+                      : session.engine['installed'] == true
+                      ? 'RVC 待加载'
+                      : 'RVC 未安装')
+                : label,
             showDot: true,
             dense: true,
             variant: session.apiReady
@@ -67,6 +83,7 @@ Future<void> showSpeechEngineDialog(
   BuildContext context,
   SpeechGenerationSession session, {
   Map<String, dynamic>? configuration,
+  bool? conversion,
 }) {
   final key = GlobalKey<_SpeechEngineDialogState>();
   return showAudioEditorDialog<void>(
@@ -76,6 +93,7 @@ Future<void> showSpeechEngineDialog(
       key: key,
       session: session,
       configuration: configuration,
+      conversion: conversion ?? session.conversion,
     ),
   );
 }
@@ -85,9 +103,11 @@ class _SpeechEngineDialog extends StatefulWidget {
     super.key,
     required this.session,
     this.configuration,
+    this.conversion = false,
   });
   final SpeechGenerationSession session;
   final Map<String, dynamic>? configuration;
+  final bool conversion;
   @override
   State<_SpeechEngineDialog> createState() => _SpeechEngineDialogState();
 }
@@ -162,7 +182,7 @@ class _SpeechEngineDialogState extends State<_SpeechEngineDialog> {
     'profile': _downloadProfile,
     'hf': _hf.text,
     'pypi': _pypi.text,
-    'torch': _torch.text,
+    if (widget.conversion) 'rvc_torch': _torch.text else 'torch': _torch.text,
     'github': _github.text,
   });
 
@@ -180,8 +200,9 @@ class _SpeechEngineDialogState extends State<_SpeechEngineDialog> {
     _hf.text = '${downloads['hf'] ?? 'https://hf-mirror.com'}';
     _pypi.text =
         '${downloads['pypi'] ?? 'https://pypi.tuna.tsinghua.edu.cn/simple'}';
-    _torch.text =
-        '${downloads['torch'] ?? 'https://mirror.sjtu.edu.cn/pytorch-wheels/cu126'}';
+    _torch.text = widget.conversion
+        ? '${downloads['rvc_torch'] ?? 'https://download.pytorch.org/whl'}'
+        : '${downloads['torch'] ?? 'https://mirror.sjtu.edu.cn/pytorch-wheels/cu126'}';
     _github.text = '${downloads['github'] ?? ''}';
   }
 
@@ -238,8 +259,10 @@ class _SpeechEngineDialogState extends State<_SpeechEngineDialog> {
       _feedback = '';
     });
     try {
-      if (action == 'install' || action == 'save') await _saveSources();
-      if (save) {
+      if (action == 'install' || action == 'save') {
+        await _saveSources();
+      }
+      if (save && !widget.conversion) {
         await widget.session.call('configure-engine', {
           'mode': _mode,
           'url': _url.text,
@@ -254,7 +277,9 @@ class _SpeechEngineDialogState extends State<_SpeechEngineDialog> {
         });
         _feedback = action == 'check-installation'
             ? (widget.session.engine['installed'] == true
-                  ? '引擎组件已就绪；请继续配置声音模型和参考音频。'
+                  ? (widget.conversion
+                        ? '引擎组件已就绪；导入音色后可开始转换。'
+                        : '引擎组件已就绪；请继续配置声音模型和参考音频。')
                   : '组件尚未齐全，请继续安装。')
             : action == 'check-engine'
             ? widget.session.apiDetail
@@ -631,6 +656,295 @@ class _SpeechEngineDialogState extends State<_SpeechEngineDialog> {
     );
   }
 
+  Future<void> _saveRvcDownloads() async {
+    try {
+      await _saveSources();
+    } catch (error) {
+      if (mounted) setState(() => _error = '$error');
+    }
+  }
+
+  Widget _rvcDownloadSources() {
+    final enabled = !_installActive && !_saving;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: RmSelect<String>(
+                key: const ValueKey('rvc-download-profile'),
+                value: _downloadProfile,
+                items: const {
+                  'official': '官方源',
+                  'domestic': '国内镜像',
+                  'custom': '自定义下载源',
+                },
+                onChanged: !enabled
+                    ? null
+                    : (profile) {
+                        setState(() {
+                          _downloadProfile = profile;
+                          if (profile != 'custom') {
+                            final mirror = profile == 'domestic';
+                            _hf.text = mirror
+                                ? 'https://hf-mirror.com'
+                                : 'https://huggingface.co';
+                            _pypi.text = mirror
+                                ? 'https://pypi.tuna.tsinghua.edu.cn/simple'
+                                : 'https://pypi.org/simple';
+                            _torch.text = mirror
+                                ? 'https://mirror.sjtu.edu.cn/pytorch-wheels'
+                                : 'https://download.pytorch.org/whl';
+                            _github.clear();
+                          }
+                        });
+                        unawaited(_saveRvcDownloads());
+                      },
+              ),
+            ),
+            const SizedBox(width: 8),
+            RmButton(
+              label: '打开安装目录',
+              leading: const RmIcon('folder-open', size: 12),
+              onPressed: () => _action('open-install-directory', save: false),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '镜像不可用时回退官方源；已完成文件与依赖缓存会复用。',
+          style: RmText.sans(10.5, color: context.rm.fg3),
+        ),
+        if (_downloadProfile == 'domestic') ...[
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _caption(
+                  '模型源',
+                  RmSelect<String>(
+                    value: _hf.text,
+                    items: const {
+                      'https://hf-mirror.com': 'HF-Mirror',
+                      'https://huggingface.co': 'Hugging Face 官方',
+                    },
+                    onChanged: !enabled
+                        ? null
+                        : (v) {
+                            setState(() => _hf.text = v);
+                            unawaited(_saveRvcDownloads());
+                          },
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _caption(
+                  'Python 源',
+                  RmSelect<String>(
+                    value: _pypi.text,
+                    items: const {
+                      'https://pypi.tuna.tsinghua.edu.cn/simple': '清华大学',
+                      'https://mirrors.aliyun.com/pypi/simple': '阿里云',
+                      'https://repo.huaweicloud.com/repository/pypi/simple':
+                          '华为云',
+                      'https://mirrors.ustc.edu.cn/pypi/simple': '中国科学技术大学',
+                      'https://mirrors.bfsu.edu.cn/pypi/web/simple': '北京外国语大学',
+                      'https://pypi.org/simple': 'PyPI 官方',
+                    },
+                    onChanged: !enabled
+                        ? null
+                        : (v) {
+                            setState(() => _pypi.text = v);
+                            unawaited(_saveRvcDownloads());
+                          },
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _caption(
+                  'PyTorch 源',
+                  RmSelect<String>(
+                    value: _torch.text,
+                    items: const {
+                      'https://mirror.sjtu.edu.cn/pytorch-wheels': '上海交通大学',
+                      'https://download.pytorch.org/whl': 'PyTorch 官方',
+                    },
+                    onChanged: !enabled
+                        ? null
+                        : (v) {
+                            setState(() => _torch.text = v);
+                            unawaited(_saveRvcDownloads());
+                          },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+        if (_downloadProfile == 'custom') ...[
+          const SizedBox(height: 8),
+          for (final entry in [
+            ('模型地址', _hf),
+            ('Python 索引', _pypi),
+            ('PyTorch 根地址 · 自动匹配 CPU / CUDA', _torch),
+            ('GitHub 加速前缀（可选）', _github),
+          ])
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _caption(
+                entry.$1,
+                TextField(
+                  controller: entry.$2,
+                  enabled: enabled,
+                  decoration: rmFieldDecoration(context),
+                  style: RmText.mono(11),
+                  onSubmitted: (_) => unawaited(_saveRvcDownloads()),
+                ),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  Widget _rvcSettings() {
+    final s = widget.session;
+    final installed = s.engine['installed'] == true;
+    final hasModel =
+        '${speechMap(s.engine['selection'])['model_id'] ?? ''}'.isNotEmpty;
+    final loading = s.jobs.any(
+      (j) =>
+          ['start-engine', 'restart-engine'].contains(j['kind']) &&
+          ['queued', 'running'].contains(j['status']),
+    );
+    final owned =
+        speechMap(s.engine['api'])['owned'] == true || s.apiReady || loading;
+    return Column(
+      key: const ValueKey('rvc-install-settings'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionTitle('下载与安装'),
+        _caption(
+          '推理设备',
+          RmSelect<String>(
+            value: '${speechMap(s.engine['runtime'])['device'] ?? 'cpu'}',
+            items: const {'cpu': 'CPU · 通用', 'cuda:0': 'CUDA · NVIDIA 显卡'},
+            onChanged: s.busy || _saving
+                ? null
+                : (device) async {
+                    try {
+                      await s.call('configure-runtime', {'device': device});
+                    } catch (error) {
+                      if (mounted) setState(() => _error = '$error');
+                    }
+                  },
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '切换设备后请安装或修复对应依赖。',
+          style: RmText.sans(10.5, color: context.rm.fg3),
+        ),
+        if (!installed) ...[
+          const SizedBox(height: 8),
+          Text(
+            '首次下载约 0.8 GB 至数 GB，取决于设备与缓存；只安装推理组件，音色模型另行导入。',
+            style: RmText.sans(11, color: context.rm.fg3),
+          ),
+        ],
+        const SizedBox(height: 8),
+        _rvcDownloadSources(),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final part in speechMaps(s.engine['components']))
+              RmTooltip(
+                message: (part['missing'] as List? ?? []).join('\n'),
+                child: RmChip(
+                  label: '${part['ready'] == true ? '✓' : '○'} ${part['name']}',
+                  variant: part['ready'] == true
+                      ? RmChipVariant.accent
+                      : RmChipVariant.muted,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _group([
+          _button(
+            installed ? '安装或修复' : (_installJob != null ? '继续安装' : '安装组件'),
+            'import',
+            'install',
+            primary: true,
+            save: false,
+            enabled: !s.busy,
+          ),
+          _button(
+            '检查组件',
+            'check',
+            'check-installation',
+            save: false,
+            enabled: !s.busy,
+          ),
+          _button(
+            '删除推理引擎',
+            'trash',
+            'uninstall-engine',
+            save: false,
+            enabled: !s.busy,
+          ),
+        ]),
+        if (_installJob != null) _installationProgress(_installJob),
+        if (installed)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(
+              '引擎组件已就绪；导入音色模型即可转换，不需要参考文本或参考音频。',
+              style: RmText.sans(11.5, color: context.rm.accent.base),
+            ),
+          ),
+        Divider(height: 20, color: context.rm.border),
+        _sectionTitle('服务控制'),
+        _group([
+          _button(
+            '加载音色',
+            'play',
+            'start-engine',
+            primary: true,
+            save: false,
+            enabled: installed && hasModel && !s.busy && !s.apiReady,
+          ),
+          _button('停止服务', 'stop', 'stop-engine', save: false, enabled: owned),
+          _button(
+            '重启服务',
+            'refresh',
+            'restart-engine',
+            save: false,
+            enabled: installed && hasModel && !s.busy && s.apiReady,
+          ),
+        ]),
+        if (_error.isNotEmpty || _feedback.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              _error.isNotEmpty ? _error : _feedback,
+              style: RmText.sans(
+                11.5,
+                color: _error.isNotEmpty ? context.rm.danger : context.rm.fg3,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.session,
@@ -647,316 +961,332 @@ class _SpeechEngineDialogState extends State<_SpeechEngineDialog> {
       final hasVoice =
           hasModels && '${config['ref_audio_path'] ?? ''}'.isNotEmpty;
       final job = _installJob;
-      final settings = Column(
-        key: const ValueKey('speech-install-settings'),
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _sectionTitle('连接设置'),
-          _connectionFields(),
-          const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Row(
+      final settings = widget.conversion
+          ? _rvcSettings()
+          : Column(
+              key: const ValueKey('speech-install-settings'),
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: Checkbox(
-                    key: const ValueKey('speech-auto-start'),
-                    value: _autoStart,
-                    activeColor: context.rm.accent.base,
-                    checkColor: context.rm.accent.onAccent,
-                    onChanged: s.busy || _mode != 'managed'
-                        ? null
-                        : (value) => setState(() => _autoStart = value!),
+                _sectionTitle('连接设置'),
+                _connectionFields(),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: Checkbox(
+                          key: const ValueKey('speech-auto-start'),
+                          value: _autoStart,
+                          activeColor: context.rm.accent.base,
+                          checkColor: context.rm.accent.onAccent,
+                          onChanged: s.busy || _mode != 'managed'
+                              ? null
+                              : (value) => setState(() => _autoStart = value!),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '使用时自动启动本地 API',
+                        style: RmText.sans(
+                          12,
+                          color: _mode == 'managed'
+                              ? context.rm.fg2
+                              : context.rm.fg4,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
+                Divider(height: 20, color: context.rm.border),
+                _sectionTitle('下载与安装'),
+                if (!installed) ...[
+                  Text(
+                    '首次完整下载预计约 4–6 GB，建议预留至少 20 GB 磁盘空间（含环境、基础模型与安装缓存）。不含自行导入的声音模型；已有缓存可减少下载量。',
+                    key: const ValueKey('speech-install-size-notice'),
+                    style: RmText.sans(11, color: context.rm.fg3),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                LayoutBuilder(
+                  builder: (context, box) {
+                    final source = RmSelect<String>(
+                      value: _downloadProfile,
+                      items: const {
+                        'domestic': '国内镜像（推荐）',
+                        'official': '官方源',
+                        'custom': '自定义下载源',
+                      },
+                      onChanged: _installActive
+                          ? null
+                          : (v) => setState(() {
+                              _downloadProfile = v;
+                              if (v == 'domestic') {
+                                _hf.text = 'https://hf-mirror.com';
+                                _pypi.text =
+                                    'https://pypi.tuna.tsinghua.edu.cn/simple';
+                                _torch.text =
+                                    'https://mirror.sjtu.edu.cn/pytorch-wheels/cu126';
+                              }
+                            }),
+                    );
+                    final actions = Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        RmButton(
+                          key: const ValueKey('speech-manual-install'),
+                          label: '手动准备',
+                          leading: const RmIcon('folder', size: 12),
+                          onPressed: _showManualPreparation,
+                        ),
+                        const SizedBox(width: 8),
+                        RmButton(
+                          label: '打开安装目录',
+                          leading: const RmIcon('folder-open', size: 12),
+                          onPressed: () =>
+                              _action('open-install-directory', save: false),
+                        ),
+                      ],
+                    );
+                    if (box.maxWidth < 480) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          source,
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: actions,
+                          ),
+                        ],
+                      );
+                    }
+                    return Row(
+                      children: [
+                        Expanded(child: source),
+                        const SizedBox(width: 8),
+                        actions,
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 6),
                 Text(
-                  '使用时自动启动本地 API',
-                  style: RmText.sans(
-                    12,
-                    color: _mode == 'managed' ? context.rm.fg2 : context.rm.fg4,
-                  ),
+                  '暂停安装后可切换下载源；已完成文件继续复用。',
+                  style: RmText.sans(10.5, color: context.rm.fg3),
                 ),
-              ],
-            ),
-          ),
-          Divider(height: 20, color: context.rm.border),
-          _sectionTitle('下载与安装'),
-          if (!installed) ...[
-            Text(
-              '首次完整下载预计约 4–6 GB，建议预留至少 20 GB 磁盘空间（含环境、基础模型与安装缓存）。不含自行导入的声音模型；已有缓存可减少下载量。',
-              key: const ValueKey('speech-install-size-notice'),
-              style: RmText.sans(11, color: context.rm.fg3),
-            ),
-            const SizedBox(height: 8),
-          ],
-          LayoutBuilder(
-            builder: (context, box) {
-              final source = RmSelect<String>(
-                value: _downloadProfile,
-                items: const {
-                  'domestic': '国内镜像（推荐）',
-                  'official': '官方源',
-                  'custom': '自定义下载源',
-                },
-                onChanged: _installActive
-                    ? null
-                    : (v) => setState(() {
-                        _downloadProfile = v;
-                        if (v == 'domestic') {
-                          _hf.text = 'https://hf-mirror.com';
-                          _pypi.text =
-                              'https://pypi.tuna.tsinghua.edu.cn/simple';
-                          _torch.text =
-                              'https://mirror.sjtu.edu.cn/pytorch-wheels/cu126';
-                        }
-                      }),
-              );
-              final actions = Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  RmButton(
-                    key: const ValueKey('speech-manual-install'),
-                    label: '手动准备',
-                    leading: const RmIcon('folder', size: 12),
-                    onPressed: _showManualPreparation,
-                  ),
-                  const SizedBox(width: 8),
-                  RmButton(
-                    label: '打开安装目录',
-                    leading: const RmIcon('folder-open', size: 12),
-                    onPressed: () =>
-                        _action('open-install-directory', save: false),
+                if (_downloadProfile == 'domestic') ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _caption(
+                          '模型源',
+                          RmSelect<String>(
+                            value: _hf.text,
+                            items: const {
+                              'https://hf-mirror.com': 'HF-Mirror',
+                              'https://huggingface.co': 'Hugging Face 官方',
+                            },
+                            onChanged: _installActive
+                                ? null
+                                : (v) => setState(() => _hf.text = v),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _caption(
+                          'Python 源',
+                          RmSelect<String>(
+                            value: _pypi.text,
+                            items: const {
+                              'https://pypi.tuna.tsinghua.edu.cn/simple':
+                                  '清华大学',
+                              'https://mirrors.aliyun.com/pypi/simple': '阿里云',
+                              'https://repo.huaweicloud.com/repository/pypi/simple':
+                                  '华为云',
+                              'https://mirrors.ustc.edu.cn/pypi/simple':
+                                  '中国科学技术大学',
+                              'https://mirrors.bfsu.edu.cn/pypi/web/simple':
+                                  '北京外国语大学',
+                              'https://pypi.org/simple': 'PyPI 官方',
+                            },
+                            onChanged: _installActive
+                                ? null
+                                : (v) => setState(() => _pypi.text = v),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _caption(
+                          'PyTorch 源',
+                          RmSelect<String>(
+                            value: _torch.text,
+                            items: const {
+                              'https://mirror.sjtu.edu.cn/pytorch-wheels/cu126':
+                                  '上海交通大学',
+                              'https://mirrors.nju.edu.cn/pytorch/whl/cu126':
+                                  '南京大学',
+                              'https://download.pytorch.org/whl/cu126':
+                                  'PyTorch 官方',
+                            },
+                            onChanged: _installActive
+                                ? null
+                                : (v) => setState(() => _torch.text = v),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
-              );
-              if (box.maxWidth < 480) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                if (_downloadProfile == 'custom') ...[
+                  const SizedBox(height: 8),
+                  for (final entry in [
+                    ('模型地址', _hf),
+                    ('Python 索引', _pypi),
+                    ('PyTorch cu126 索引', _torch),
+                    ('GitHub 加速前缀（可选）', _github),
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _caption(
+                        entry.$1,
+                        TextField(
+                          controller: entry.$2,
+                          decoration: rmFieldDecoration(context),
+                          style: RmText.mono(11),
+                        ),
+                      ),
+                    ),
+                ],
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
                   children: [
-                    source,
-                    const SizedBox(height: 8),
-                    Align(alignment: Alignment.centerRight, child: actions),
+                    for (final part in speechMaps(s.engine['components']))
+                      RmTooltip(
+                        message: speechMaps(s.engine['components']).isEmpty
+                            ? ''
+                            : (part['missing'] as List? ?? []).join('\n'),
+                        child: RmChip(
+                          label:
+                              '${part['ready'] == true ? '✓' : '○'} ${part['name']}',
+                          variant: part['ready'] == true
+                              ? RmChipVariant.accent
+                              : RmChipVariant.muted,
+                        ),
+                      ),
                   ],
-                );
-              }
-              return Row(
-                children: [
-                  Expanded(child: source),
-                  const SizedBox(width: 8),
-                  actions,
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '暂停安装后可切换下载源；已完成文件继续复用。',
-            style: RmText.sans(10.5, color: context.rm.fg3),
-          ),
-          if (_downloadProfile == 'domestic') ...[
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: _caption(
-                    '模型源',
-                    RmSelect<String>(
-                      value: _hf.text,
-                      items: const {
-                        'https://hf-mirror.com': 'HF-Mirror',
-                        'https://huggingface.co': 'Hugging Face 官方',
-                      },
-                      onChanged: _installActive
-                          ? null
-                          : (v) => setState(() => _hf.text = v),
+                ),
+                const SizedBox(height: 10),
+                _group([
+                  if (_mode == 'managed')
+                    _button(
+                      installed ? '安装或修复' : (job != null ? '继续安装' : '安装组件'),
+                      'import',
+                      'install',
+                      primary: true,
+                      save: false,
+                      enabled: !s.busy,
+                    ),
+                  _button(
+                    '检查组件',
+                    'check',
+                    'check-installation',
+                    save: false,
+                    enabled: !s.busy,
+                  ),
+                  _button(
+                    '删除推理引擎',
+                    'trash',
+                    'uninstall-engine',
+                    save: false,
+                    enabled: !s.busy && _mode == 'managed',
+                  ),
+                ]),
+                if (job != null && !(installed && job['status'] == 'failed'))
+                  _installationProgress(job),
+                if (installed)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Text(
+                      hasVoice
+                          ? '组件已就绪；启动服务只需 GPT / SoVITS 模型，参考音频用于生成。'
+                          : '引擎组件已就绪。先导入 GPT / SoVITS 模型以启动服务；参考音频在生成时配置。',
+                      style: RmText.sans(11.5, color: context.rm.accent.base),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _caption(
-                    'Python 源',
-                    RmSelect<String>(
-                      value: _pypi.text,
-                      items: const {
-                        'https://pypi.tuna.tsinghua.edu.cn/simple': '清华大学',
-                        'https://mirrors.aliyun.com/pypi/simple': '阿里云',
-                        'https://repo.huaweicloud.com/repository/pypi/simple':
-                            '华为云',
-                        'https://mirrors.ustc.edu.cn/pypi/simple': '中国科学技术大学',
-                        'https://mirrors.bfsu.edu.cn/pypi/web/simple':
-                            '北京外国语大学',
-                        'https://pypi.org/simple': 'PyPI 官方',
-                      },
-                      onChanged: _installActive
-                          ? null
-                          : (v) => setState(() => _pypi.text = v),
+                Divider(height: 20, color: context.rm.border),
+                _sectionTitle('服务控制'),
+                if (_mode == 'managed')
+                  _group([
+                    _button(
+                      '启动服务',
+                      'play',
+                      'start-engine',
+                      primary: true,
+                      enabled: installed && hasModels && !s.busy && !owned,
+                    ),
+                    _button(
+                      '停止服务',
+                      'stop',
+                      'stop-engine',
+                      save: false,
+                      enabled: owned,
+                    ),
+                    _button(
+                      '重启服务',
+                      'refresh',
+                      'restart-engine',
+                      enabled: installed && hasModels && !s.busy && owned,
+                    ),
+                  ]),
+                if (hasVoice)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: _button(
+                      '检查声音配置',
+                      'check',
+                      'validate-config',
+                      enabled: installed && !s.busy,
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _caption(
-                    'PyTorch 源',
-                    RmSelect<String>(
-                      value: _torch.text,
-                      items: const {
-                        'https://mirror.sjtu.edu.cn/pytorch-wheels/cu126':
-                            '上海交通大学',
-                        'https://mirrors.nju.edu.cn/pytorch/whl/cu126': '南京大学',
-                        'https://download.pytorch.org/whl/cu126': 'PyTorch 官方',
-                      },
-                      onChanged: _installActive
-                          ? null
-                          : (v) => setState(() => _torch.text = v),
+                if (_error.isNotEmpty || _feedback.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      _error.isNotEmpty ? _error : _feedback,
+                      style: RmText.sans(
+                        11.5,
+                        color: _error.isNotEmpty
+                            ? context.rm.danger
+                            : context.rm.fg3,
+                      ),
                     ),
                   ),
-                ),
               ],
-            ),
-          ],
-          if (_downloadProfile == 'custom') ...[
-            const SizedBox(height: 8),
-            for (final entry in [
-              ('模型地址', _hf),
-              ('Python 索引', _pypi),
-              ('PyTorch cu126 索引', _torch),
-              ('GitHub 加速前缀（可选）', _github),
-            ])
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _caption(
-                  entry.$1,
-                  TextField(
-                    controller: entry.$2,
-                    decoration: rmFieldDecoration(context),
-                    style: RmText.mono(11),
-                  ),
-                ),
-              ),
-          ],
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final part in speechMaps(s.engine['components']))
-                RmTooltip(
-                  message: speechMaps(s.engine['components']).isEmpty
-                      ? ''
-                      : (part['missing'] as List? ?? []).join('\n'),
-                  child: RmChip(
-                    label:
-                        '${part['ready'] == true ? '✓' : '○'} ${part['name']}',
-                    variant: part['ready'] == true
-                        ? RmChipVariant.accent
-                        : RmChipVariant.muted,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _group([
-            if (_mode == 'managed')
-              _button(
-                installed ? '安装或修复' : (job != null ? '继续安装' : '安装组件'),
-                'import',
-                'install',
-                primary: true,
-                save: false,
-                enabled: !s.busy,
-              ),
-            _button(
-              '检查组件',
-              'check',
-              'check-installation',
-              save: false,
-              enabled: !s.busy,
-            ),
-            _button(
-              '删除推理引擎',
-              'trash',
-              'uninstall-engine',
-              save: false,
-              enabled: !s.busy && _mode == 'managed',
-            ),
-          ]),
-          if (job != null && !(installed && job['status'] == 'failed'))
-            _installationProgress(job),
-          if (installed)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Text(
-                hasVoice
-                    ? '组件已就绪；启动服务只需 GPT / SoVITS 模型，参考音频用于生成。'
-                    : '引擎组件已就绪。先导入 GPT / SoVITS 模型以启动服务；参考音频在生成时配置。',
-                style: RmText.sans(11.5, color: context.rm.accent.base),
-              ),
-            ),
-          Divider(height: 20, color: context.rm.border),
-          _sectionTitle('服务控制'),
-          if (_mode == 'managed')
-            _group([
-              _button(
-                '启动服务',
-                'play',
-                'start-engine',
-                primary: true,
-                enabled: installed && hasModels && !s.busy && !owned,
-              ),
-              _button(
-                '停止服务',
-                'stop',
-                'stop-engine',
-                save: false,
-                enabled: owned,
-              ),
-              _button(
-                '重启服务',
-                'refresh',
-                'restart-engine',
-                enabled: installed && hasModels && !s.busy && owned,
-              ),
-            ]),
-          if (hasVoice)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: _button(
-                '检查声音配置',
-                'check',
-                'validate-config',
-                enabled: installed && !s.busy,
-              ),
-            ),
-          if (_error.isNotEmpty || _feedback.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                _error.isNotEmpty ? _error : _feedback,
-                style: RmText.sans(
-                  11.5,
-                  color: _error.isNotEmpty ? context.rm.danger : context.rm.fg3,
-                ),
-              ),
-            ),
-        ],
-      );
+            );
       return TimingDialogFrame(
-        title: '安装与设置推理引擎',
+        title: widget.conversion ? '安装与设置 RVC 引擎' : '安装与设置推理引擎',
         icon: 'settings',
-        description: '独立 GPT-SoVITS · 同机 API',
+        description: widget.conversion
+            ? '离线音色转换 · 独立推理环境'
+            : '独立 GPT-SoVITS · 同机 API',
         width: 1120,
         busy: false,
         onClose: () => unawaited(_requestClose()),
         headerActions: [
           SpeechApiStatus(
             session: s,
+            conversion: widget.conversion,
             onPressed: () => _action('check-engine', save: false),
           ),
         ],
@@ -982,9 +1312,10 @@ class _SpeechEngineDialogState extends State<_SpeechEngineDialog> {
                 ),
         ),
         actions: [
-          _button('保存设置', 'save', 'save', primary: true, enabled: !s.busy),
+          if (!widget.conversion)
+            _button('保存设置', 'save', 'save', primary: true, enabled: !s.busy),
           RmButton(
-            label: installed && !hasVoice ? '配置声音' : '完成',
+            label: !widget.conversion && installed && !hasVoice ? '配置声音' : '完成',
             variant: RmButtonVariant.primary,
             leading: const RmIcon('check', size: 12),
             onPressed: () => unawaited(_requestClose()),

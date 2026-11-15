@@ -24,6 +24,8 @@ enum TourPage {
   voiceReplacementEditor,
   speech,
   voiceGeneration,
+  rvc,
+  voiceConversion,
   settings,
 }
 
@@ -58,6 +60,50 @@ const _voiceEditorSteps = [
 ];
 
 const _steps = <TourPage, List<TourStep>>{
+  TourPage.rvc: [
+    TourStep(
+      'rvc-engine',
+      '引擎与推理设备',
+      '在推理引擎中安装组件、选择下载源并查看控制台。音色配置可切换 CPU 或 NVIDIA CUDA；首次使用 CUDA 需要安装对应依赖，转换时会自动加载音色。',
+    ),
+    TourStep(
+      'rvc-models',
+      '音色模型与关联索引',
+      '导入 RVC 的 .pth 音色模型，可搭配同一音色的 .index 索引，减少原说话人音色残留。音色、索引、设备和参数可保存为 RVC 预设；* 表示修改未保存。',
+    ),
+    TourStep(
+      'rvc-parameters',
+      '音色转换参数',
+      '变调以半音调整音高，0 保留原音高。检索比例控制索引参与程度；过高可能带入训练音频瑕疵。悬浮参数旁的提示图标可查看说明。当前调整自动记住，保存预设后可一键还原整组配置。',
+    ),
+    TourStep(
+      'rvc-source',
+      '导入源音频',
+      '导入或拖入已有语音，可逐条试听，多条输入会批量转换。RVC 改变音色，保留原句内容和节奏；它不会根据文字重新生成台词。',
+    ),
+    TourStep(
+      'rvc-output',
+      '转换结果与音频编辑',
+      '点击转换音色后在这里查看结果，任务可暂停、继续或取消。展开结果可试听、编辑波形、加入素材池或导出；源文件保留。替换游戏语音请到语音替换页选择条目。',
+    ),
+  ],
+  TourPage.voiceConversion: [
+    TourStep(
+      'generation-text',
+      '原音与目标音色',
+      '这里显示所选条目的原句内容，RVC 使用条目的原音进行音色转换，文本不可修改。选择目标音色；模型设置中可导入模型、关联索引、切换设备和调整参数。',
+    ),
+    TourStep(
+      'generation-actions',
+      '转换与自动替换',
+      '单条或多选批量转换完成后会自动应用到替换草稿，可跳过已替换条目。取消应用保留文件；删除文件会同时清除替换。试听后记得保存，再构建和写入游戏。',
+    ),
+    TourStep(
+      'generation-wave',
+      '试听转换结果',
+      '转换完成后显示结果波形。左键定位、右键框选，可插入静音、静音或删除选区、调整音量，并可撤销、重做或恢复原音。',
+    ),
+  ],
   TourPage.speech: [
     TourStep(
       'speech-api',

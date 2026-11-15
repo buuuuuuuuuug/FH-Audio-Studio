@@ -31,7 +31,7 @@ class StingerSession {
         'serve',
         '--project-dir',
         project,
-        if (command != 'speech') ...[
+        if (command != 'speech' && command != 'rvc') ...[
           '--game-dir',
           game,
           '--ffmpeg',

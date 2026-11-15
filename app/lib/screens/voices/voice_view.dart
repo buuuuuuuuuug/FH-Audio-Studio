@@ -173,6 +173,7 @@ extension _VoiceView on _VoiceReplacementState {
     height: 24,
     child: RmButton(
       key: ValueKey('voice-${collapsed ? 'expand' : 'collapse'}-$id'),
+      variant: RmButtonVariant.ghost,
       size: RmButtonSize.sm,
       horizontalPadding: 4,
       leading: RmIcon(
@@ -287,15 +288,33 @@ extension _VoiceView on _VoiceReplacementState {
         if (ref.watch(editorOptionsProvider).speechEnabled)
           RmButton(
             key: const ValueKey('voice-open-generation'),
-            label: _generationEntries == null ? '语音生成' : '收起语音生成',
+            label: !_conversionMode && _generationEntries != null
+                ? '收起 GPT-SoVITS'
+                : 'GPT-SoVITS',
             leading: const RmIcon('volume', size: 12),
             onPressed: _locked || !_readyFile || _entry == null
                 ? null
                 : () {
-                    if (_generationEntries == null) {
+                    if (_generationEntries == null || _conversionMode) {
                       unawaited(_openGeneration());
                     } else {
                       _update(() => _generationEntries = null);
+                    }
+                  },
+          ),
+        if (ref.watch(editorOptionsProvider).speechEnabled)
+          RmButton(
+            label: _conversionMode && _generationEntries != null
+                ? '收起 RVC'
+                : 'RVC',
+            leading: const RmIcon('swap', size: 12),
+            onPressed: _locked || !_readyFile || _entry == null
+                ? null
+                : () {
+                    if (_conversionMode && _generationEntries != null) {
+                      _update(() => _generationEntries = null);
+                    } else {
+                      unawaited(_openConversion());
                     }
                   },
           ),
@@ -460,7 +479,12 @@ extension _VoiceView on _VoiceReplacementState {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: EdgeInsets.fromLTRB(
+            14,
+            12,
+            titleAction == null ? 6 : 14,
+            12,
+          ),
           child: SizedBox(
             height: 32,
             child: LayoutBuilder(

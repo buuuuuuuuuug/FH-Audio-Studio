@@ -164,6 +164,7 @@ extension _VoicePool on _VoiceReplacementState {
         'input': {'assets': ids.toList()},
       });
       _speech?.dismissPreviews(assetIds: ids);
+      _rvc?.dismissPreviews(assetIds: ids);
       if (ids.any((id) => _playing == 'asset:$id')) {
         _playGeneration++;
         await _voicePlayer.pause();

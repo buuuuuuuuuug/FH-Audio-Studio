@@ -280,6 +280,16 @@ function Assert-ReleaseBundle {
   if (-not $wheel) {
     throw "Missing FH Radio Studio wheel in $wheelDir"
   }
+  $preparedRuntime = Join-Path $RepoRoot ".fh-radio-studio-dev\release-inputs\runtime"
+  foreach ($relative in @("uv.lock", "wheels\$($wheel.Name)")) {
+    $prepared = Join-Path $preparedRuntime $relative
+    $bundled = Join-Path (Join-Path $BundleDir "runtime") $relative
+    Assert-Exists $prepared "prepared release runtime input"
+    if ((Get-FileHash -LiteralPath $prepared -Algorithm SHA256).Hash -ne
+        (Get-FileHash -LiteralPath $bundled -Algorithm SHA256).Hash) {
+      throw "Bundled runtime differs from current release inputs: $relative"
+    }
+  }
 }
 
 function New-ReleaseArchive {
@@ -388,7 +398,9 @@ $cmakeConfigureArgs += @(
   "-DFH_RADIO_STUDIO_REQUIRE_BUNDLED_UV=ON",
   "-DFH_RADIO_STUDIO_REQUIRE_RELEASE_RUNTIME=ON",
   "-DFH_RADIO_STUDIO_REQUIRE_RELEASE_TOOLCHAIN=ON",
-  "-DFH_RADIO_STUDIO_REQUIRE_RELEASE_AUDIO_TOOLS=ON"
+  "-DFH_RADIO_STUDIO_REQUIRE_RELEASE_AUDIO_TOOLS=ON",
+  "-DFH_RADIO_STUDIO_RELEASE_RUNTIME_INPUT_DIR=$(Join-Path $RepoRoot '.fh-radio-studio-dev/release-inputs/runtime')",
+  "-DFH_RADIO_STUDIO_RELEASE_TOOLCHAIN_INPUT_DIR=$(Join-Path $RepoRoot '.fh-radio-studio-dev/release-inputs/toolchain')"
 )
 Invoke-Checked (Get-CMakeCommand) $cmakeConfigureArgs $AppRoot
 

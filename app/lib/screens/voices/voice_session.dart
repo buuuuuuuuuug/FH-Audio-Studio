@@ -198,6 +198,7 @@ extension _VoiceSession on _VoiceReplacementState {
       'assetStatus': _assetStatus,
       'assetCategory': _assetCategory,
       'generationEntries': _generationEntries,
+      'conversionMode': _conversionMode,
       'language': _language,
       'assetSelecting': _selectingAssets,
       'selectedAssets': _selectedAssets.toList(),
@@ -251,9 +252,16 @@ extension _VoiceSession on _VoiceReplacementState {
     _assetCategory = '${data['assetCategory'] ?? ''}';
     if (ref.read(editorOptionsProvider).speechEnabled &&
         data['generationEntries'] != null) {
+      _conversionMode = data['conversionMode'] == true;
       _generationEntries = stingerMaps(data['generationEntries']);
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _speechSession();
+        if (mounted) {
+          if (_conversionMode) {
+            _rvcSession();
+          } else {
+            _speechSession();
+          }
+        }
       });
     }
     _language = '${data['language'] ?? '当前语言'}';

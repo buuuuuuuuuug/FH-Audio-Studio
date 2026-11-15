@@ -30,6 +30,7 @@ import '../core/voice_audition.dart';
 import '../core/speech_generation.dart';
 import '../core/speech_configuration.dart';
 import 'voices/speech_generation_panel.dart';
+import 'voices/rvc_configuration.dart';
 import '../widgets/open_package_folder_button.dart';
 import '../core/deployment_preview.dart';
 import '../widgets/deployment_dialog.dart';
@@ -258,7 +259,8 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
 
   late final VoiceWorkspaceSession _session;
   late final String _project;
-  SpeechGenerationSession? _speech;
+  SpeechGenerationSession? _speech, _rvc;
+  bool _conversionMode = false;
   List<Map<String, dynamic>>? _generationEntries;
   int _generationRevision = 0;
   String _assetSort = 'added', _assetStatus = 'all', _assetCategory = '';
@@ -377,6 +379,7 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
   void dispose() {
     _cacheWorkspace();
     _speech?.removeListener(_refreshGenerated);
+    _rvc?.removeListener(_refreshGenerated);
     _materialWorker?.dispose();
     _playGeneration++;
     _completed?.cancel();
@@ -732,6 +735,7 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
     next['${_bank['id']}'] = replacements;
     _change(next);
     _speech?.dismissPreviews(target: {'bank_id': _bank['id'], 'index': _index});
+    _rvc?.dismissPreviews(target: {'bank_id': _bank['id'], 'index': _index});
   }
 
   Future<void> _restoreFile() async {
@@ -748,6 +752,9 @@ class _VoiceReplacementState extends ConsumerState<VoiceReplacementScreen> {
     _change(next);
     for (final entry in _entries) {
       _speech?.dismissPreviews(
+        target: {'bank_id': _bank['id'], 'index': entry['index']},
+      );
+      _rvc?.dismissPreviews(
         target: {'bank_id': _bank['id'], 'index': entry['index']},
       );
     }

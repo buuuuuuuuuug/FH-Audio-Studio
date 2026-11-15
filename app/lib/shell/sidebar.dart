@@ -148,6 +148,7 @@ class _SidebarState extends ConsumerState<Sidebar> {
                       width: compact ? 20 : 26,
                       child: RmButton(
                         key: const ValueKey('sidebar-toggle'),
+                        variant: RmButtonVariant.ghost,
                         size: RmButtonSize.sm,
                         leading: RmIcon(
                           compact ? 'chevron-right' : 'chevron-left',

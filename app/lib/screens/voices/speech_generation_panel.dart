@@ -11,6 +11,7 @@ import '../../widgets/rm_field.dart';
 import '../../widgets/rm_icon.dart';
 import '../../widgets/rm_select.dart';
 import 'speech_configuration_panel.dart';
+import 'rvc_configuration.dart';
 import 'voice_clip_editor.dart';
 import 'speech_generation_status.dart';
 
@@ -29,8 +30,10 @@ class SpeechGenerationPanel extends StatefulWidget {
     this.targetSnapshot,
     this.onUnapply,
     this.featureTour = false,
+    this.conversion = false,
   });
   final SpeechGenerationSession session;
+  final bool conversion;
   final List<Map<String, dynamic>> entries;
   final double? initialSpeed;
   final int initialEntryIndex;
@@ -96,7 +99,7 @@ class _SpeechGenerationPanelState extends State<SpeechGenerationPanel> {
   Future<void> _activate() async {
     try {
       await widget.session.start();
-      if (mounted) {
+      if (mounted && !widget.conversion) {
         if (widget.session.selectedPresetId != null) {
           setState(() => _preset = widget.session.selectedPresetId);
         } else if (_preset != null) {
@@ -308,6 +311,7 @@ class _SpeechGenerationPanelState extends State<SpeechGenerationPanel> {
       key: const ValueKey('speech-text'),
       controller: _text,
       undoController: _undo,
+      readOnly: widget.conversion,
       minLines: 1,
       maxLines: 2,
       onChanged: (_) => _cache(),
@@ -319,7 +323,16 @@ class _SpeechGenerationPanelState extends State<SpeechGenerationPanel> {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: Listenable.merge([widget.session, _clip]),
     builder: (_, _) {
-      final s = widget.session, presets = s.presets;
+      final s = widget.session;
+      final presets = widget.conversion
+          ? speechMaps(s.engine['files'])
+                .where((f) => f['kind'] == 'model')
+                .map((f) => {...f, 'name': f['filename']})
+                .toList()
+          : s.presets;
+      if (widget.conversion) {
+        _preset = speechMap(s.engine['selection'])['model_id'] as String?;
+      }
       if (!presets.any((p) => p['id'] == _preset)) {
         _preset =
             presets
@@ -344,24 +357,48 @@ class _SpeechGenerationPanelState extends State<SpeechGenerationPanel> {
           pending.where((j) => j['status'] == 'running').firstOrNull ??
           pending.firstOrNull;
       final failed = latest?['status'] == 'failed' ? latest : null;
-      final preset = SizedBox(
-        width: 128,
-        child: RmSelect<String>(
-          key: const ValueKey('speech-use-preset'),
-          menuWidth: 260,
-          value: _preset ?? '',
-          items: presets.isEmpty
-              ? {'': '请先保存声音预设'}
-              : {for (final p in presets) '${p['id']}': '${p['name']}'},
-          onChanged: presets.isEmpty
-              ? null
-              : (id) => setState(() {
-                  _preset = id;
-                  s.selectPreset(id);
-                  _cache();
-                }),
-        ),
-      );
+      final preset = widget.conversion
+          ? SizedBox(
+              width: 128,
+              child: RmSelect<String>(
+                key: const ValueKey('speech-use-preset'),
+                menuWidth: 260,
+                value: '${s.engine['selected_preset_id'] ?? ''}',
+                items: {
+                  '': '当前配置',
+                  for (final p in s.presets)
+                    '${p['id']}':
+                        '${p['name']}${p['id'] == s.engine['selected_preset_id'] && s.engine['preset_dirty'] == true ? ' *' : ''}',
+                },
+                onChanged: s.busy
+                    ? null
+                    : (id) => s.call('select-preset', {
+                        'id': id.isEmpty ? null : id,
+                      }),
+              ),
+            )
+          : SizedBox(
+              width: 128,
+              child: RmSelect<String>(
+                key: const ValueKey('speech-use-preset'),
+                menuWidth: 260,
+                value: _preset ?? '',
+                items: presets.isEmpty
+                    ? {'': '请先保存声音预设'}
+                    : {for (final p in presets) '${p['id']}': '${p['name']}'},
+                onChanged: presets.isEmpty
+                    ? null
+                    : (id) => setState(() {
+                        _preset = id;
+                        if (widget.conversion) {
+                          unawaited(s.call('select-model', {'model_id': id}));
+                        } else {
+                          s.selectPreset(id);
+                        }
+                        _cache();
+                      }),
+              ),
+            );
       final language = RmButton(
         label: _source == 'content' ? '语音语言' : '显示语言',
         leading: const RmIcon('swap', size: 12),
@@ -380,16 +417,32 @@ class _SpeechGenerationPanelState extends State<SpeechGenerationPanel> {
         label: '模型设置',
         horizontalPadding: 8,
         leading: const RmIcon('settings', size: 12),
-        onPressed: () => showSpeechConfigurationDialog(context, s),
+        onPressed: () => widget.conversion
+            ? showRvcConfigurationDialog(context, s)
+            : showSpeechConfigurationDialog(context, s),
       );
-      final api = SpeechApiStatus(session: s);
+      final api = SpeechApiStatus(
+        session: s,
+        conversion: widget.conversion,
+        onPressed: widget.conversion
+            ? () => showRvcEngineDialog(context, s)
+            : null,
+      );
       final controls = <Widget>[
         RmButton(
           key: const ValueKey('speech-generate'),
-          label: widget.entries.length > 1 ? '批量生成' : '生成语音',
+          label: widget.conversion
+              ? (widget.entries.length > 1 ? '批量转换' : '转换音色')
+              : (widget.entries.length > 1 ? '批量生成' : '生成语音'),
           variant: RmButtonVariant.primary,
           leading: const RmIcon('volume', size: 12),
-          onPressed: _submitting || _preset == null || !s.apiReady || _applying
+          onPressed:
+              _submitting ||
+                  _preset == null ||
+                  !(widget.conversion
+                      ? s.engine['installed'] == true
+                      : s.apiReady) ||
+                  _applying
               ? null
               : _generate,
         ),
@@ -490,7 +543,7 @@ class _SpeechGenerationPanelState extends State<SpeechGenerationPanel> {
               final optionRow = Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  language,
+                  if (!widget.conversion) language,
                   const SizedBox(width: 8),
                   preset,
                   const SizedBox(width: 8),
@@ -505,7 +558,12 @@ class _SpeechGenerationPanelState extends State<SpeechGenerationPanel> {
                       spacing: 8,
                       runSpacing: 6,
                       crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [language, preset, settings, api],
+                      children: [
+                        if (!widget.conversion) language,
+                        preset,
+                        settings,
+                        api,
+                      ],
                     );
               return box.maxWidth >= 820
                   ? Row(
@@ -575,8 +633,16 @@ class _SpeechGenerationPanelState extends State<SpeechGenerationPanel> {
       );
       return widget.featureTour
           ? panel.withFeatureTour(
-              TourPage.voiceGeneration,
-              enabled: s.apiReady && _preset != null && !s.busy && !_submitting,
+              widget.conversion
+                  ? TourPage.voiceConversion
+                  : TourPage.voiceGeneration,
+              enabled:
+                  (widget.conversion
+                      ? s.engine['installed'] == true
+                      : s.apiReady) &&
+                  _preset != null &&
+                  !s.busy &&
+                  !_submitting,
             )
           : panel;
     },

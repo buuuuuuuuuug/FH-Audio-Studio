@@ -15,13 +15,14 @@ import '../state/router.dart';
 import '../state/studio_state.dart';
 import '../theme/app_theme.dart';
 import '../theme/text_styles.dart';
-import '../widgets/rm_button.dart';
-import '../widgets/rm_icon.dart';
 import '../widgets/rm_tooltip.dart';
 import '../widgets/feature_tour.dart';
 import 'voice_replacement.dart';
 import 'voices/speech_configuration_panel.dart';
 import 'voices/speech_results.dart';
+import 'voices/rvc_workbench.dart';
+import 'voices/speech_workbench_header.dart';
+import 'voices/speech_setup_guidance.dart';
 
 class SpeechStudioScreen extends ConsumerWidget {
   const SpeechStudioScreen({super.key});
@@ -53,11 +54,14 @@ class SpeechStudioScreen extends ConsumerWidget {
     );
     final project = studio.projectDir;
     session.receive = (data) => workspace.acceptGeneration(project, data);
+    final conversion = ref.watch(rvcGenerationProvider(key));
+    conversion.receive = (data) => workspace.acceptGeneration(project, data);
     return SpeechStudioWorkbench(
       key: ValueKey(key),
       session: session,
       preferences: ref.read(sharedPreferencesProvider),
       featureTour: true,
+      conversionSession: conversion,
     );
   }
 }
@@ -68,10 +72,12 @@ class SpeechStudioWorkbench extends StatefulWidget {
     required this.session,
     this.preferences,
     this.featureTour = false,
+    this.conversionSession,
   });
   final SpeechGenerationSession session;
   final SharedPreferences? preferences;
   final bool featureTour;
+  final SpeechGenerationSession? conversionSession;
   @override
   State<SpeechStudioWorkbench> createState() => _SpeechStudioWorkbenchState();
 }
@@ -80,10 +86,12 @@ class _SpeechStudioWorkbenchState extends State<SpeechStudioWorkbench> {
   late final SpeechConfiguration _configuration;
   double _ratio = .32, _dragRatio = .32, _dragX = 0;
   bool _configuredOnce = false;
+  bool _conversion = false;
   @override
   void initState() {
     super.initState();
     _ratio = widget.preferences?.getDouble('speech.configurationRatio') ?? .32;
+    _conversion = widget.preferences?.getString('speech.mode') == 'rvc';
     _configuration = SpeechConfiguration(widget.session);
     unawaited(_initialize());
   }
@@ -117,66 +125,12 @@ class _SpeechStudioWorkbenchState extends State<SpeechStudioWorkbench> {
     Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-          child: LayoutBuilder(
-            builder: (context, box) {
-              final title = Text(
-                '声音配置',
-                style: RmText.sans(
-                  15,
-                  color: context.rm.fg,
-                  weight: FontWeight.w600,
-                ),
-              );
-              final api = SpeechApiStatus(session: widget.session);
-              final actions = Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  RmButton.icon(
-                    key: const ValueKey('speech-open-engine-directory'),
-                    icon: const RmIcon('folder-open', size: 12),
-                    tooltip: '打开 GPT-SoVITS 安装目录',
-                    onPressed: () =>
-                        widget.session.call('open-install-directory'),
-                  ),
-                  const SizedBox(width: 8),
-                  RmButton(
-                    key: const ValueKey('speech-engine-settings'),
-                    label: '推理引擎',
-                    variant: RmButtonVariant.primary,
-                    leading: const RmIcon('settings', size: 12),
-                    onPressed: () => showSpeechEngineDialog(
-                      context,
-                      widget.session,
-                      configuration: _configuration.snapshot(),
-                    ),
-                  ),
-                ],
-              );
-              return box.maxWidth >= 360
-                  ? Row(
-                      children: [
-                        Expanded(child: title),
-                        api,
-                        const SizedBox(width: 8),
-                        actions,
-                      ],
-                    )
-                  : Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(child: title),
-                            api,
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Align(alignment: Alignment.centerRight, child: actions),
-                      ],
-                    );
-            },
+        SpeechConfigurationHeader(
+          session: widget.session,
+          onSettings: () => showSpeechEngineDialog(
+            context,
+            widget.session,
+            configuration: _configuration.snapshot(),
           ),
         ).tourAnchor('speech-api'),
         Divider(height: 1, color: context.rm.border),
@@ -196,128 +150,27 @@ class _SpeechStudioWorkbenchState extends State<SpeechStudioWorkbench> {
       ],
     ),
   );
-  Widget _setupGuidanceCard() => _card(
-    Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '先配置推理引擎',
-                      style: RmText.sans(
-                        16,
-                        weight: FontWeight.w600,
-                        color: context.rm.fg,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '安装本地服务，或连接已有的同机 GPT-SoVITS API。',
-                      style: RmText.sans(12, color: context.rm.fg3),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 14),
-              SpeechApiStatus(session: widget.session),
-            ],
-          ),
-        ),
-        Divider(height: 1, color: context.rm.border),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Column(
-            children: [
-              for (final step in const [
-                ('1', '安装或连接引擎', '选择下载源安装组件，或填写已有 API 地址。'),
-                ('2', '配置声音预设', '选择 GPT、SoVITS 模型及参考音频。'),
-                ('3', '生成与试听', '输入文本，生成后试听、编辑并加入素材池。'),
-              ])
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 24,
-                        child: Text(
-                          step.$1,
-                          style: RmText.mono(12, color: context.rm.accent.base),
-                        ),
-                      ),
-                      Expanded(
-                        child: LayoutBuilder(
-                          builder: (_, box) {
-                            final title = Text(
-                              step.$2,
-                              style: RmText.sans(
-                                12.5,
-                                weight: FontWeight.w600,
-                                color: context.rm.fg,
-                              ),
-                            );
-                            final detail = Text(
-                              step.$3,
-                              style: RmText.sans(12, color: context.rm.fg3),
-                            );
-                            return box.maxWidth < 480
-                                ? Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      title,
-                                      const SizedBox(height: 4),
-                                      detail,
-                                    ],
-                                  )
-                                : Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      SizedBox(width: 112, child: title),
-                                      Expanded(child: detail),
-                                    ],
-                                  );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            border: Border(top: BorderSide(color: context.rm.border)),
-          ),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: RmButton(
-              label: '安装与设置推理引擎',
-              variant: RmButtonVariant.primary,
-              leading: const RmIcon('settings', size: 12),
-              onPressed: () => showSpeechEngineDialog(context, widget.session),
-            ),
-          ),
-        ),
-      ],
-    ),
+  Widget _setupGuidanceCard() => SpeechSetupGuidance(
+    session: widget.session,
+    onSettings: () => showSpeechEngineDialog(context, widget.session),
   );
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: Listenable.merge([widget.session, _configuration]),
     builder: (_, _) {
+      if (_conversion && widget.conversionSession != null) {
+        return RvcWorkbench(
+          session: widget.conversionSession!,
+          featureTour: widget.featureTour,
+          preferences: widget.preferences,
+          onTextMode: () {
+            setState(() => _conversion = false);
+            unawaited(widget.session.start());
+            widget.preferences?.setString('speech.mode', 'gpt');
+          },
+        );
+      }
       if (_configuration.ready &&
           (widget.session.apiReady || widget.session.presets.isNotEmpty)) {
         _configuredOnce = true;
@@ -327,34 +180,20 @@ class _SpeechStudioWorkbenchState extends State<SpeechStudioWorkbench> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('语音生成', style: RmText.pageH1(color: context.rm.fg)),
-                      const SizedBox(height: 6),
-                      Text(
-                        widget.session.apiState == 'error'
-                            ? widget.session.apiDetail
-                            : !_configuredOnce
-                            ? 'GPT-SoVITS 根据参考音频生成文本语音；配置引擎和声音后即可使用。'
-                            : 'GPT-SoVITS 根据参考音频生成文本语音，支持试听、编辑与游戏语音替换。',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: RmText.sans(
-                          12,
-                          color: widget.session.apiState == 'error'
-                              ? context.rm.danger
-                              : context.rm.fg3,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            SpeechWorkbenchHeader(
+              description: widget.session.apiState == 'error'
+                  ? widget.session.apiDetail
+                  : !_configuredOnce
+                  ? 'GPT-SoVITS 根据参考音频生成文本语音；配置引擎和声音后即可使用。'
+                  : 'GPT-SoVITS 根据参考音频生成文本语音，支持试听、编辑与游戏语音替换。',
+              error: widget.session.apiState == 'error',
+              conversion: false,
+              onSwitch: widget.conversionSession == null
+                  ? null
+                  : () {
+                      setState(() => _conversion = true);
+                      widget.preferences?.setString('speech.mode', 'rvc');
+                    },
             ),
             const SizedBox(height: 16),
             Expanded(

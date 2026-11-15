@@ -110,4 +110,5 @@ known_first_party = ["backend", "tools"]
 include = ["backend*"]
 
 [tool.setuptools.package-data]
+"backend.fh_radio_studio_cli.rvc_environment" = ["pyproject.toml", "uv.lock"]
 "backend.fh_radio_studio_cli.tts_runtime" = ["pyproject.toml", "uv.lock"]

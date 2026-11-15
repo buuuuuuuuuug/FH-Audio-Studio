@@ -848,9 +848,9 @@ class Engine:
 
 
 class GenerationWorkspace:
-    def __init__(self, project, engine):
+    def __init__(self, project, engine, *, namespace="generation"):
         self.project = Path(project).resolve()
-        self.folder = self.project / "analysis/voices/generation"
+        self.folder = self.project / "analysis/voices" / namespace
         self.path = self.folder / "jobs.json"
         self.engine = engine
         self.lock = threading.RLock()
@@ -1294,7 +1294,8 @@ class GenerationWorkspace:
                             "text": job["text"],
                             "preset_name": job["preset"]["name"],
                             "seed": candidate["seed"],
-                            "revision": REVISION,
+                            "revision": job.get("engine_revision", REVISION),
+                            "engine": job.get("engine_name", "GPT-SoVITS"),
                             "parameters": candidate["parameters"],
                         },
                     )

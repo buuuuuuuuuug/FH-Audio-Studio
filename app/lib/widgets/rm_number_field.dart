@@ -70,9 +70,16 @@ class RmNumberField extends StatelessWidget {
           decimal: true,
           signed: true,
         ),
-        style: RmText.mono(12, color: context.rm.fg),
+        style: RmText.mono(12, color: enabled ? context.rm.fg : context.rm.fg4),
         textAlignVertical: TextAlignVertical.center,
         decoration: rmFieldDecoration(context).copyWith(
+          fillColor: enabled
+              ? context.rm.raised
+              : context.rm.raised.withValues(alpha: .4),
+          suffixStyle: RmText.mono(
+            11,
+            color: enabled ? context.rm.fg3 : context.rm.fg4,
+          ),
           suffixText: unit,
           suffixIconConstraints: const BoxConstraints.tightFor(
             width: 24,

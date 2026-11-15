@@ -16,10 +16,17 @@ import '../../widgets/rm_number_field.dart';
 import '../../widgets/rm_select.dart';
 import 'voice_clip_editor.dart';
 import 'speech_generation_status.dart';
+import '../../widgets/external_audio_drop_target.dart';
+import '../../widgets/feature_tour.dart';
 
 /// Text entry and expandable results. Audio editing is the existing editor.
 class SpeechResults extends StatefulWidget {
-  const SpeechResults({super.key, required this.configuration});
+  const SpeechResults({
+    super.key,
+    required this.configuration,
+    this.conversion = false,
+  });
+  final bool conversion;
   final SpeechConfiguration configuration;
   @override
   State<SpeechResults> createState() => _SpeechResultsState();
@@ -108,6 +115,10 @@ class _SpeechResultsState extends State<SpeechResults> {
       'edit': _edits['${record['id']}'],
   };
   Future<void> _generate() async {
+    if (widget.conversion) {
+      await _convert();
+      return;
+    }
     final count = int.tryParse(_count.text), lines = _split();
     if (count == null ||
         count < 1 ||
@@ -166,6 +177,204 @@ class _SpeechResultsState extends State<SpeechResults> {
     } catch (_) {
       if (mounted) setState(() => _message = '无法读取文本，请使用 UTF-8 编码的 TXT 文件。');
     }
+  }
+
+  Future<void> _importAudio([List<String>? paths]) async {
+    paths ??= (await FilePicker.pickFiles(
+      type: FileType.audio,
+      allowMultiple: true,
+    ))?.files.map((f) => f.path).whereType<String>().toList();
+    if (paths == null || paths.isEmpty) return;
+    setState(() => _submitting = true);
+    try {
+      await session.call('import-input', {'paths': paths});
+    } catch (e) {
+      if (mounted) setState(() => _message = '$e');
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Future<void> _convert() async {
+    setState(() {
+      _submitting = true;
+      _message = null;
+    });
+    try {
+      final before = session.jobs.map((j) => j['id']).toSet();
+      final result = await session.call('submit', {
+        'entries': speechMaps(session.state['inputs']),
+        'origin': 'studio',
+      });
+      _requestedJobs.addAll(
+        speechMaps(
+          result['jobs'],
+        ).where((j) => !before.contains(j['id'])).map((j) => '${j['id']}'),
+      );
+    } catch (e) {
+      if (mounted) setState(() => _message = '$e');
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Widget _sourcePanel() {
+    final inputs = speechMaps(session.state['inputs']);
+    final pending = session.jobs
+        .where((j) => ['queued', 'running', 'paused'].contains(j['status']))
+        .toList();
+    final completed = session.jobs
+        .where(
+          (j) => _requestedJobs.contains(j['id']) && j['status'] == 'ready',
+        )
+        .length;
+    return ExternalAudioDropTarget(
+      onDrop: _importAudio,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '源音频',
+                    style: RmText.sans(
+                      15,
+                      weight: FontWeight.w600,
+                      color: context.rm.fg,
+                    ),
+                  ),
+                ),
+                RmButton(
+                  label: '导入音频',
+                  leading: const RmIcon('folder', size: 12),
+                  onPressed: _submitting ? null : () => _importAudio(),
+                ),
+                const SizedBox(width: 8),
+                RmButton(
+                  label: '清空输入',
+                  onPressed: inputs.isEmpty
+                      ? null
+                      : () => session.call('clear-inputs'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (inputs.isEmpty)
+              Container(
+                height: 80,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: context.rm.raised,
+                  border: Border.all(color: context.rm.border),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '拖入音频，或点击导入音频。',
+                  style: RmText.sans(12, color: context.rm.fg3),
+                ),
+              ),
+            if (inputs.isNotEmpty)
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 130),
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final input in inputs)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${input['name']}',
+                                overflow: TextOverflow.ellipsis,
+                                style: RmText.sans(12, color: context.rm.fg),
+                              ),
+                            ),
+                            Text(
+                              '${(input['duration'] as num).toStringAsFixed(2)} 秒',
+                              style: RmText.mono(11, color: context.rm.fg3),
+                            ),
+                            const SizedBox(width: 8),
+                            RmButton.icon(
+                              icon: const RmIcon('play', size: 12),
+                              tooltip: '试听源音频',
+                              onPressed: () async {
+                                await StudioAudioPlayers.pauseOthers(
+                                  StudioAudioPlayers.voice,
+                                );
+                                await startVoiceAudition(
+                                  StudioAudioPlayers.voice,
+                                  '${input['path']}',
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                RmButton(
+                  label: inputs.length > 1 ? '批量转换' : '转换音色',
+                  variant: RmButtonVariant.primary,
+                  leading: const RmIcon('volume', size: 12),
+                  onPressed:
+                      _submitting ||
+                          inputs.isEmpty ||
+                          session.engine['installed'] != true ||
+                          speechMap(session.engine['selection'])['model_id'] ==
+                              null
+                      ? null
+                      : _generate,
+                ),
+                SizedBox(
+                  width: 300,
+                  child: SpeechGenerationStatus(
+                    text:
+                        _message ??
+                        (pending.isNotEmpty
+                            ? '完成 $completed · 剩余 ${pending.length} · ${pending.first['progress'] ?? pending.first['status']}'
+                            : inputs.isEmpty
+                            ? '请导入源音频'
+                            : '选择音色后转换'),
+                    running:
+                        pending.isNotEmpty && session.state['paused'] != true,
+                    onPause:
+                        pending.isNotEmpty && session.state['paused'] != true
+                        ? () => session.call('pause')
+                        : null,
+                    onResume: session.state['paused'] == true
+                        ? () => session.call('resume')
+                        : null,
+                    onCancel: pending.isNotEmpty
+                        ? () => session.call('cancel')
+                        : null,
+                    onRetry: session.jobs.any((j) => j['status'] == 'failed')
+                        ? () => session.call('retry', {
+                            'ids': session.jobs
+                                .where((j) => j['status'] == 'failed')
+                                .map((j) => j['id'])
+                                .toList(),
+                          })
+                        : null,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _play(Map<String, dynamic> record) async {
@@ -319,7 +528,7 @@ class _SpeechResultsState extends State<SpeechResults> {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              '${speechMap(job['preset'])['name']} · ${(edit?['edited_duration'] as num? ?? record['duration'] as num).toStringAsFixed(2)} 秒 · 种子 ${record['seed']}',
+                              '${speechMap(job['preset'])['name']} · ${(edit?['edited_duration'] as num? ?? record['duration'] as num).toStringAsFixed(2)} 秒${widget.conversion ? ' · 变调 ${speechMap(job['parameters'])['pitch']} 半音' : ' · 种子 ${record['seed']}'}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: RmText.mono(10.5, color: context.rm.fg3),
@@ -500,206 +709,210 @@ class _SpeechResultsState extends State<SpeechResults> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      '生成文本',
-                      style: RmText.sans(
-                        15,
-                        color: context.rm.fg,
-                        weight: FontWeight.w600,
+          if (widget.conversion) _sourcePanel().tourAnchor('rvc-source'),
+          if (!widget.conversion)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        '生成文本',
+                        style: RmText.sans(
+                          15,
+                          color: context.rm.fg,
+                          weight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    const Spacer(),
-                    RmButton(
-                      label: '导入文本',
-                      size: RmButtonSize.md,
-                      leading: const RmIcon('folder', size: 12),
-                      onPressed: _importText,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 7),
-                TextField(
-                  key: const ValueKey('speech-studio-text'),
-                  controller: _text,
-                  minLines: 3,
-                  maxLines: 5,
-                  style: RmText.sans(12.5, color: context.rm.fg),
-                  decoration: rmFieldDecoration(
-                    context,
-                    hint: '输入需要生成的语音；批量生成可按行或空行拆分。',
+                      const Spacer(),
+                      RmButton(
+                        label: '导入文本',
+                        size: RmButtonSize.md,
+                        leading: const RmIcon('folder', size: 12),
+                        onPressed: _importText,
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 8),
-                LayoutBuilder(
-                  builder: (_, box) {
-                    final mode = SizedBox(
-                      width: 112,
-                      child: RmSelect<String>(
-                        value: _mode,
-                        items: const {
-                          'whole': '整段生成',
-                          'lines': '每行一条',
-                          'paragraphs': '空行分段',
-                        },
-                        onChanged: (v) => setState(() => _mode = v),
-                      ),
-                    );
-                    final count = SizedBox(
-                      width: 66,
-                      height: 32,
-                      child: RmNumberField(
-                        key: const ValueKey('speech-count'),
-                        controller: _count,
-                        min: 1,
-                        max: 8,
-                        step: 1,
-                        decimals: 0,
-                      ),
-                    );
-                    final quantity = Text(
-                      '数量',
-                      style: RmText.sans(11.5, color: context.rm.fg3),
-                    );
-                    final generate = RmButton(
-                      key: const ValueKey('speech-studio-generate'),
-                      label: '生成语音',
-                      variant: RmButtonVariant.primary,
-                      leading: const RmIcon('volume', size: 12),
-                      onPressed:
-                          _submitting ||
-                              _rendering.isNotEmpty ||
-                              !widget.configuration.ready ||
-                              !session.apiReady
-                          ? null
-                          : _generate,
-                    );
-                    final requested = session.jobs
-                        .where((j) => _requestedJobs.contains(j['id']))
-                        .toList();
-                    final remaining = requested
-                        .where(
-                          (j) => [
-                            'queued',
-                            'running',
-                            'paused',
-                          ].contains(j['status']),
-                        )
-                        .length;
-                    final completed = requested
-                        .where((j) => j['status'] == 'ready')
-                        .length;
-                    final isPaused = session.state['paused'] == true;
-                    final statusText = _submitting
-                        ? '正在提交生成任务'
-                        : _message ??
-                              (failed != null
-                                  ? '${failed['error']}'
-                                  : requested.length > 1
-                                  ? '完成 $completed/${requested.length} · 剩余 $remaining'
-                                        '${isPaused
-                                            ? ' · 已暂停'
-                                            : active.isNotEmpty
-                                            ? ' · ${active.first['progress'] ?? '等待生成'}'
-                                            : ''}'
-                                  : isPaused && remaining > 0
-                                  ? '已暂停；点击继续生成'
-                                  : active.isNotEmpty
-                                  ? '${active.first['progress'] ?? '等待生成'}'
-                                  : completed > 0
-                                  ? '生成完成，请试听后加入素材池'
-                                  : '输入文本后生成');
-                    final status = SpeechGenerationStatus(
-                      key: const ValueKey('speech-studio-status'),
-                      text: statusText,
-                      running: _submitting || active.isNotEmpty && !isPaused,
-                      failed: failed != null,
-                      onResume: isPaused ? () => session.call('resume') : null,
-                      onPause: active.isNotEmpty && !isPaused
-                          ? () => session.call('pause')
-                          : null,
-                      onCancel:
-                          requested.any(
+                  const SizedBox(height: 7),
+                  TextField(
+                    key: const ValueKey('speech-studio-text'),
+                    controller: _text,
+                    minLines: 3,
+                    maxLines: 5,
+                    style: RmText.sans(12.5, color: context.rm.fg),
+                    decoration: rmFieldDecoration(
+                      context,
+                      hint: '输入需要生成的语音；批量生成可按行或空行拆分。',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  LayoutBuilder(
+                    builder: (_, box) {
+                      final mode = SizedBox(
+                        width: 112,
+                        child: RmSelect<String>(
+                          value: _mode,
+                          items: const {
+                            'whole': '整段生成',
+                            'lines': '每行一条',
+                            'paragraphs': '空行分段',
+                          },
+                          onChanged: (v) => setState(() => _mode = v),
+                        ),
+                      );
+                      final count = SizedBox(
+                        width: 66,
+                        height: 32,
+                        child: RmNumberField(
+                          key: const ValueKey('speech-count'),
+                          controller: _count,
+                          min: 1,
+                          max: 8,
+                          step: 1,
+                          decimals: 0,
+                        ),
+                      );
+                      final quantity = Text(
+                        '数量',
+                        style: RmText.sans(11.5, color: context.rm.fg3),
+                      );
+                      final generate = RmButton(
+                        key: const ValueKey('speech-studio-generate'),
+                        label: '生成语音',
+                        variant: RmButtonVariant.primary,
+                        leading: const RmIcon('volume', size: 12),
+                        onPressed:
+                            _submitting ||
+                                _rendering.isNotEmpty ||
+                                !widget.configuration.ready ||
+                                !session.apiReady
+                            ? null
+                            : _generate,
+                      );
+                      final requested = session.jobs
+                          .where((j) => _requestedJobs.contains(j['id']))
+                          .toList();
+                      final remaining = requested
+                          .where(
                             (j) => [
-                              'running',
                               'queued',
+                              'running',
                               'paused',
                             ].contains(j['status']),
                           )
-                          ? () => session.call('cancel', {
-                              'ids': requested.map((j) => j['id']).toList(),
-                            })
-                          : null,
-                      onRetry: failed == null
-                          ? null
-                          : () => session.call('retry', {
-                              'ids': [failed['id']],
-                            }),
-                    );
-                    final controls = Row(
-                      children: [
-                        generate,
-                        const SizedBox(width: 8),
-                        mode,
-                        const SizedBox(width: 8),
-                        quantity,
-                        const SizedBox(width: 6),
-                        count,
-                      ],
-                    );
-                    return box.maxWidth >= 760
-                        ? Row(
-                            children: [
-                              controls,
-                              const SizedBox(width: 12),
-                              Flexible(
-                                child: SizedBox(width: 320, child: status),
-                              ),
-                            ],
-                          )
-                        : Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [
-                                  generate,
-                                  mode,
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      quantity,
-                                      const SizedBox(width: 6),
-                                      count,
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              status,
-                            ],
-                          );
-                  },
-                ),
-              ],
+                          .length;
+                      final completed = requested
+                          .where((j) => j['status'] == 'ready')
+                          .length;
+                      final isPaused = session.state['paused'] == true;
+                      final statusText = _submitting
+                          ? '正在提交生成任务'
+                          : _message ??
+                                (failed != null
+                                    ? '${failed['error']}'
+                                    : requested.length > 1
+                                    ? '完成 $completed/${requested.length} · 剩余 $remaining'
+                                          '${isPaused
+                                              ? ' · 已暂停'
+                                              : active.isNotEmpty
+                                              ? ' · ${active.first['progress'] ?? '等待生成'}'
+                                              : ''}'
+                                    : isPaused && remaining > 0
+                                    ? '已暂停；点击继续生成'
+                                    : active.isNotEmpty
+                                    ? '${active.first['progress'] ?? '等待生成'}'
+                                    : completed > 0
+                                    ? '生成完成，请试听后加入素材池'
+                                    : '输入文本后生成');
+                      final status = SpeechGenerationStatus(
+                        key: const ValueKey('speech-studio-status'),
+                        text: statusText,
+                        running: _submitting || active.isNotEmpty && !isPaused,
+                        failed: failed != null,
+                        onResume: isPaused
+                            ? () => session.call('resume')
+                            : null,
+                        onPause: active.isNotEmpty && !isPaused
+                            ? () => session.call('pause')
+                            : null,
+                        onCancel:
+                            requested.any(
+                              (j) => [
+                                'running',
+                                'queued',
+                                'paused',
+                              ].contains(j['status']),
+                            )
+                            ? () => session.call('cancel', {
+                                'ids': requested.map((j) => j['id']).toList(),
+                              })
+                            : null,
+                        onRetry: failed == null
+                            ? null
+                            : () => session.call('retry', {
+                                'ids': [failed['id']],
+                              }),
+                      );
+                      final controls = Row(
+                        children: [
+                          generate,
+                          const SizedBox(width: 8),
+                          mode,
+                          const SizedBox(width: 8),
+                          quantity,
+                          const SizedBox(width: 6),
+                          count,
+                        ],
+                      );
+                      return box.maxWidth >= 760
+                          ? Row(
+                              children: [
+                                controls,
+                                const SizedBox(width: 12),
+                                Flexible(
+                                  child: SizedBox(width: 320, child: status),
+                                ),
+                              ],
+                            )
+                          : Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    generate,
+                                    mode,
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        quantity,
+                                        const SizedBox(width: 6),
+                                        count,
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                status,
+                              ],
+                            );
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
           Divider(height: 1, color: context.rm.border),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               children: [
                 Text(
-                  '生成音频',
+                  widget.conversion ? '转换音频' : '生成音频',
                   style: RmText.sans(
                     15,
                     color: context.rm.fg,
@@ -713,7 +926,7 @@ class _SpeechResultsState extends State<SpeechResults> {
                 ),
               ],
             ),
-          ),
+          ).tourAnchor('rvc-output'),
           Expanded(
             child: records.isEmpty
                 ? Center(

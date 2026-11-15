@@ -6,6 +6,7 @@ import '../domain/radio_library.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/project_workspace.dart';
 import 'studio_state.dart';
+import 'app_state.dart';
 
 class EditorOptions {
   const EditorOptions({
@@ -33,17 +34,22 @@ class EditorOptionsController extends StateNotifier<EditorOptions> {
     );
   }
   final Ref ref;
+  static const speechPreferenceKey = 'rm.speech_generation_enabled';
   void _load() {
-    final settings = FhRadioStudioProject.readSettings(
-      ref.read(studioProvider).projectDir,
-    );
+    final studio = ref.read(studioProvider);
+    final settings = studio.hasProject
+        ? FhRadioStudioProject.readSettings(studio.projectDir)
+        : <String, dynamic>{};
     state = EditorOptions(
       syncPostLoop: settings['sync_post_loop'] == true,
       manualOnly: settings['manual_only'] == true,
       sirenEnabled: settings['siren_enabled'] == true,
       expansionEnabled: settings['expansion_enabled'] == true,
       slmEnabled: settings['seamless_loop_music'] != false,
-      speechEnabled: settings['speech_generation_enabled'] != false,
+      speechEnabled: settings['speech_generation_enabled'] is bool
+          ? settings['speech_generation_enabled'] as bool
+          : ref.read(sharedPreferencesProvider).getBool(speechPreferenceKey) ??
+                true,
     );
   }
 
@@ -95,15 +101,24 @@ class EditorOptionsController extends StateNotifier<EditorOptions> {
       slmEnabled: slmEnabled ?? state.slmEnabled,
       speechEnabled: speechEnabled ?? state.speechEnabled,
     );
-    FhRadioStudioProject.writeSettings(
-      ref.read(studioProvider).projectDir,
-      syncPostLoop: next.syncPostLoop,
-      manualOnly: next.manualOnly,
-      sirenEnabled: next.sirenEnabled,
-      expansionEnabled: next.expansionEnabled,
-      slmEnabled: next.slmEnabled,
-      speechEnabled: next.speechEnabled,
-    );
+    final studio = ref.read(studioProvider);
+    if (studio.hasProject) {
+      FhRadioStudioProject.writeSettings(
+        studio.projectDir,
+        syncPostLoop: next.syncPostLoop,
+        manualOnly: next.manualOnly,
+        sirenEnabled: next.sirenEnabled,
+        expansionEnabled: next.expansionEnabled,
+        slmEnabled: next.slmEnabled,
+        speechEnabled: next.speechEnabled,
+      );
+    } else if (speechEnabled != null) {
+      // Feature visibility can be changed before a project or backup exists.
+      // Do not create a project as a side effect of toggling an app feature.
+      ref
+          .read(sharedPreferencesProvider)
+          .setBool(speechPreferenceKey, speechEnabled);
+    }
     state = next;
     return true;
   }
@@ -112,5 +127,5 @@ class EditorOptionsController extends StateNotifier<EditorOptions> {
 final editorOptionsProvider =
     StateNotifierProvider<EditorOptionsController, EditorOptions>(
       (ref) => EditorOptionsController(ref),
-      dependencies: [studioProvider],
+      dependencies: [studioProvider, sharedPreferencesProvider],
     );

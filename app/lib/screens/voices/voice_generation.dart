@@ -42,6 +42,34 @@ extension _VoiceGeneration on _VoiceReplacementState {
     return session;
   }
 
+  SpeechGenerationSession _rvcSession() {
+    if (_rvc case final session?) return session;
+    final studio = ref.read(studioProvider);
+    final session = ref.read(
+      rvcGenerationProvider(jsonEncode([studio.repoRoot, _project])),
+    );
+    final workspace = _session, project = _project;
+    session.receive = (data) => workspace.acceptGeneration(project, data);
+    session.addListener(_refreshGenerated);
+    _rvc = session;
+    unawaited(session.start());
+    return session;
+  }
+
+  Future<void> _openConversion() async {
+    final session = _rvcSession();
+    await session.start();
+    if (!mounted) return;
+    if (session.engine['installed'] != true) {
+      await showRvcEngineDialog(context, session);
+      if (!mounted || session.engine['installed'] != true) return;
+    }
+    _update(() {
+      _conversionMode = true;
+      _generationEntries = [_speechEntry(_entry!)];
+    });
+  }
+
   void _refreshGenerated() {
     if (!mounted || _generationRevision == _session.generationRevision) return;
     final view = _session.view;
@@ -64,6 +92,7 @@ extension _VoiceGeneration on _VoiceReplacementState {
     ...entry,
     'text': '${entry['content'] ?? ''}',
     'language': speechLanguage(ref.read(studioProvider).targetLang),
+    'voice_language': ref.read(studioProvider).targetLang,
     'display_language': speechLanguage(ref.read(studioProvider).sourceLang),
     if (target)
       'target': {
@@ -137,7 +166,10 @@ extension _VoiceGeneration on _VoiceReplacementState {
       _update(() => _notice = '请先选择需要生成的音频条目。');
       return;
     }
-    _update(() => _generationEntries = entries);
+    _update(() {
+      _conversionMode = false;
+      _generationEntries = entries;
+    });
     unawaited(session.start());
   }
 }

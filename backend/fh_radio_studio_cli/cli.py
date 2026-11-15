@@ -28,6 +28,7 @@ from .package_publication import cmd_discard_package_build, cmd_publish_package
 from .prepare import cmd_prepare_track
 from .radio_xml import cmd_patch_xml
 from .reconstruct_plan import cmd_reconstruct_plan
+from .rvc_workspace import cmd_rvc_workspace
 from .seamless_loop import cmd_seamless_loops
 from .speech_generation import cmd_speech
 from .status import cmd_status
@@ -75,6 +76,32 @@ def add_common_game_arg(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="FH Radio Studio staging CLI")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    rvc = sub.add_parser("rvc", help="Independent RVC model catalog and conversion settings")
+    rvc.add_argument(
+        "action",
+        choices=[
+            "serve",
+            "status",
+            "import-file",
+            "select-model",
+            "save-parameters",
+            "submit",
+            "install",
+            "start-engine",
+            "stop-engine",
+            "accept",
+            "cancel",
+            "pause",
+            "resume",
+            "retry",
+        ],
+    )
+    rvc.add_argument("--project-dir", required=True)
+    rvc.add_argument("--engine-home")
+    rvc.add_argument("--input-json")
+    rvc.add_argument("--wait", action="store_true")
+    rvc.set_defaults(func=cmd_rvc_workspace)
 
     speech = sub.add_parser("speech", help="Independent GPT-SoVITS synthesis and project job queue")
     speech.add_argument(

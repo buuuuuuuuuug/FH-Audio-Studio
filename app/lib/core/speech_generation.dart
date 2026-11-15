@@ -33,8 +33,17 @@ class SpeechGenerationSession extends ChangeNotifier {
 
   static Future<void> _activation = Future.value();
   static final _appSession = DateTime.now().microsecondsSinceEpoch.toString();
-  SpeechGenerationSession(FhRadioStudioCli cli, String project)
-    : _worker = StingerSession(cli, project, '', command: 'speech');
+  SpeechGenerationSession(
+    FhRadioStudioCli cli,
+    String project, {
+    this.conversion = false,
+  }) : _worker = StingerSession(
+         cli,
+         project,
+         '',
+         command: conversion ? 'rvc' : 'speech',
+       );
+  final bool conversion;
   final StingerSession _worker;
   Map<String, dynamic> state = {};
   String? selectedPresetId;
@@ -98,6 +107,11 @@ class SpeechGenerationSession extends ChangeNotifier {
     bool autoStart = false,
     bool background = false,
   }) async {
+    if (conversion) {
+      _lastApiCheck = DateTime.now();
+      await call('check-engine');
+      return;
+    }
     if (busy || _disposed) return;
     _lastApiCheck = DateTime.now();
     _checkingApi = !background && !apiReady;
@@ -160,6 +174,21 @@ class SpeechGenerationSession extends ChangeNotifier {
   Map<String, dynamic> get engine => speechMap(state['engine']);
   List<Map<String, dynamic>> get jobs => speechMaps(state['jobs']);
   bool get busy => jobs.any((j) => ['queued', 'running'].contains(j['status']));
+
+  Future<void> stopIfStarted() async {
+    if (!_started || _disposed) return;
+    _started = false;
+    _checkedApi = false;
+    _timer?.cancel();
+    _timer = null;
+    // Queue shutdown with mode activation so a quick reopen cannot race it.
+    _activation = _activation.catchError((Object _) {}).then((_) async {
+      if (_disposed) return;
+      await call('stop-engine');
+      if (_foreground == this) _foreground = null;
+    });
+    await _activation;
+  }
 
   Future<Map<String, dynamic>> call(
     String action, [
@@ -365,6 +394,20 @@ final speechGenerationProvider =
       ref.onDispose(session.dispose);
       return session;
     });
+
+final rvcGenerationProvider = Provider.family<SpeechGenerationSession, String>((
+  ref,
+  key,
+) {
+  final parts = List<String>.from(jsonDecode(key));
+  final session = SpeechGenerationSession(
+    FhRadioStudioCli(repoRoot: parts[0]),
+    parts[1],
+    conversion: true,
+  );
+  ref.onDispose(session.dispose);
+  return session;
+});
 
 String speechLanguage(String? code) => switch (code?.toUpperCase()) {
   'JP' || 'JA' => 'all_ja',

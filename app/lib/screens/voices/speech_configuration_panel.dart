@@ -15,6 +15,7 @@ import '../../widgets/rm_icon.dart';
 import '../../widgets/rm_number_field.dart';
 import '../../widgets/rm_select.dart';
 import '../../widgets/rm_tooltip.dart';
+import 'speech_parameter_help.dart';
 export 'speech_engine_dialog.dart';
 import '../../widgets/timing_dialog_frame.dart';
 
@@ -600,7 +601,13 @@ class _SpeechParameterFieldsState extends State<SpeechParameterFields> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(label, style: RmText.sans(11, color: context.rm.fg3)),
+        SpeechParameterLabel(
+          key: ValueKey('gpt-help-$key'),
+          label: label,
+          help: gptParameterHelp[key]!,
+          size: 11,
+          color: context.rm.fg3,
+        ),
         const SizedBox(height: 4),
         SizedBox(
           height: 34,
@@ -635,12 +642,10 @@ class _SpeechParameterFieldsState extends State<SpeechParameterFields> {
           ),
         ),
       ),
-      Text(
-        label,
-        style: RmText.sans(
-          11.5,
-          color: enabled ? context.rm.fg2 : context.rm.fg4,
-        ),
+      SpeechParameterLabel(
+        label: label,
+        help: gptParameterHelp[key]!,
+        color: enabled ? context.rm.fg2 : context.rm.fg4,
       ),
     ],
   );
@@ -668,7 +673,12 @@ class _SpeechParameterFieldsState extends State<SpeechParameterFields> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('文本切分', style: RmText.sans(11, color: context.rm.fg3)),
+            SpeechParameterLabel(
+              label: '文本切分',
+              help: gptParameterHelp['text_split_method']!,
+              size: 11,
+              color: context.rm.fg3,
+            ),
             const SizedBox(height: 4),
             RmSelect<String>(
               value: '${c.parameters['text_split_method']}',
@@ -681,7 +691,12 @@ class _SpeechParameterFieldsState extends State<SpeechParameterFields> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('采样步数', style: RmText.sans(11, color: context.rm.fg3)),
+              SpeechParameterLabel(
+                label: '采样步数',
+                help: gptParameterHelp['sample_steps']!,
+                size: 11,
+                color: context.rm.fg3,
+              ),
               const SizedBox(height: 4),
               RmSelect<int>(
                 value: (c.parameters['sample_steps'] as num).toInt(),
@@ -697,7 +712,12 @@ class _SpeechParameterFieldsState extends State<SpeechParameterFields> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('推理设备', style: RmText.sans(11, color: context.rm.fg3)),
+              SpeechParameterLabel(
+                label: '推理设备',
+                help: gptParameterHelp['device']!,
+                size: 11,
+                color: context.rm.fg3,
+              ),
               const SizedBox(height: 4),
               RmSelect<String>(
                 value: '${c.parameters['device']}',

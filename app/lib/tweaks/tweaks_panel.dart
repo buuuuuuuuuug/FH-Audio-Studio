@@ -186,13 +186,16 @@ class _TweaksPanelState extends ConsumerState<TweaksPanel> {
     return Row(
       children: [
         Expanded(
-          child: Text('启用塞壬唱片', style: RmText.sans(11.5, color: rm.fg2)),
+          child: Text(
+            '启用塞壬唱片',
+            style: RmText.sans(12.5, weight: FontWeight.w500, color: rm.fg),
+          ),
         ),
         Tooltip(
           message: importing ? '导入完成后可切换' : '显示在线唱片库入口',
           child: SizedBox(
-            width: 34,
-            height: 22,
+            width: 40,
+            height: 24,
             child: FittedBox(
               child: Switch(
                 value: enabled,
