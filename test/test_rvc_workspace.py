@@ -1,5 +1,6 @@
 """Exercise the shared queue/adoption workflow without inference downloads."""
 
+import os
 import time
 from pathlib import Path
 from test.test_voices import resource
@@ -48,7 +49,7 @@ def audio(path):
     return path
 
 
-def test_conversion_adoption_edit_delete_and_original_preservation(work, tmp_path):
+def test_conversion_adoption_delete_and_original_preservation(work, tmp_path):
     source = audio(tmp_path / "原音.wav")
     before = source.read_bytes()
     work.action("import-input", {"paths": [str(source)]})
@@ -58,8 +59,6 @@ def test_conversion_adoption_edit_delete_and_original_preservation(work, tmp_pat
     assert job["status"] == "ready", job
     candidate = job["candidates"][0]
     request = {"job_id": job["id"], "candidate_id": candidate["id"]}
-    rendered = work.action("candidate-audio", request)
-    assert Path(rendered["path"]).is_file()
     adopted = work.action("accept", request)
     assert adopted["asset"]["generation"]["engine"] == "RVC"
     assert adopted["asset"]["category"] == "音色转换"
@@ -72,6 +71,36 @@ def test_conversion_adoption_edit_delete_and_original_preservation(work, tmp_pat
     assert work.status()["inputs"] == []
     assert not Path(inputs[0]["path"]).exists()
     assert source.read_bytes() == before
+
+
+def test_conversion_pcm_preview_and_edit_preserve_originals(work, tmp_path, monkeypatch):
+    tools = os.environ.get("FH_RADIO_STUDIO_AUDIO_TOOLS_DIR")
+    executable = Path(tools or ".") / "ffmpeg" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+    if not tools or not executable.is_file():
+        pytest.skip("requires the bundled audio tools for real PCM integration")
+    monkeypatch.setenv("FH_RADIO_STUDIO_AUDIO_TOOLS_DIR", str(executable.parent.parent))
+    source = audio(tmp_path / "原音.wav")
+    original = source.read_bytes()
+    work.action("import-input", {"paths": [str(source)]})
+    work.submit({"entries": work.status()["inputs"]})
+    job = wait(work)[0]
+    assert job["status"] == "ready", job
+    candidate = job["candidates"][0]
+    generated = Path(candidate["path"]).read_bytes()
+    request = {"job_id": job["id"], "candidate_id": candidate["id"]}
+    preview = work.action("candidate-audio", request)
+    pcm = sf.info(preview["path"])
+    assert (pcm.samplerate, pcm.channels, pcm.frames) == (48000, 2, 4800)
+    edited = work.action(
+        "candidate-audio",
+        {
+            **request,
+            "edit": {"audio_edits": [{"kind": "insert", "at": 0.04, "duration": 0.05}]},
+        },
+    )
+    assert sf.info(edited["path"]).frames == 7200
+    assert source.read_bytes() == original
+    assert Path(candidate["path"]).read_bytes() == generated
 
 
 def test_paused_queue_model_parameters_and_retry(work, tmp_path):
